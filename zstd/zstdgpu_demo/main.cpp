@@ -745,6 +745,23 @@ ZSTDGPU_API void zstdgpu_RetrieveGpuResults(zstdgpu_ResourceDataCpu *outGpuResou
 ZSTDGPU_API void zstdgpu_ReadbackTimestamps(zstdgpu_PerRequestContext req, ID3D12GraphicsCommandList *cmdList);
 ZSTDGPU_API void zstdgpu_RetrieveTimestamps(const wchar_t **outTimestampScopeNames, uint64_t *outTimestampScopeClocks, uint32_t *inoutTimestampScopeCnt, zstdgpu_PerRequestContext req, uint32_t stageIndex);
 
+static void PrintUsage()
+{
+    debugPrint(L"USAGE:\n");
+    debugPrint(L"\t--zst <path to .zst file> [Required] Specifies a file path to .zst file to decompress. Could be absolute or relative path.\n");
+    debugPrint(L"\t--chk-gpu                 [Optional] After running decompresssion on GPU, validates its outputs against the outputs from reference decompressor.\n");
+    debugPrint(L"\t--chk-cpu                 [Optional] Before running decompression on GPU, runs GPU decompressor code on CPU and validates its outputs against the outputs from reference decompressor.\n");
+    debugPrint(L"\t--sim-gpu                 [Optional] After running decompression on GPU, runs key GPU decompressor stages on CPU using intermediate inputs from GPU decompression and validates its outputs against the outputs from reference decompressor.\n");
+    debugPrint(L"\t--gpu-ven-id <id (hex)>   [Optional] VendorId (base16) to use when choosing GPU to run on.\n");
+    debugPrint(L"\t--gpu-dev-id <id (hex)>   [Optional] DeviceId (base16) to use when choosing GPU to run on.\n");
+    debugPrint(L"\t--d3d-dbg                 [Optional] Enables D3D12 debug layer.\n");
+    debugPrint(L"\t--d3d-gfx                 [Optional] Enables D3D12 Graphics queue (DIRECT), otherwise COMPUTE (by default).\n");
+    debugPrint(L"\t--run-cnt <count>         [Optional] The number of times to repeat the experiment.\n");
+    debugPrint(L"\t--ext-mem                 [Optional] Enables external heaps so the library doesn't create them.\n");
+    debugPrint(L"\t--prf-lvl <0, 1, 2>       [Optional] Chooses the level of profiling: 0 - overall bandwidth in GB/s, 1 - stage cost, 2 - internal pass cost.\n");
+    debugPrint(L"\t--help                    [Optional] Print usage info and exit.\n");
+}
+
 // Entry point
 #ifndef _GAMING_XBOX
 int wmain(int argc, wchar_t **argv)
@@ -820,6 +837,11 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR lp
                     nextRepCount = false;
                     nextPrfLevel = false;
                 }
+                else if (0 == wcscmp(argv[argi], L"--help"))
+                {
+                    PrintUsage();
+                    return 1;
+                }
                 else if (0 == wcscmp(argv[argi], L"--chk-gpu"))
                 {
                     chkGpu = true;
@@ -864,21 +886,16 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR lp
                 {
                     nextPrfLevel = true;
                 }
+                else
+                {
+                    debugPrint(L"ERROR: unknown argv[%d]: %s\n", argi, argv[argi]);
+                    debugPrint(L"Pass --help to see usage.\n");
+                    return 1;
+                }
             }
             if (1 == argc)
             {
-                debugPrint(L"USAGE:\n");
-                debugPrint(L"\t--zst <path to .zst file> [Required] Specifies a file path to .zst file to decompress. Could be absolute or relative path.\n");
-                debugPrint(L"\t--chk-gpu                 [Optional] After running decompresssion on GPU, validates its outputs against the outputs from reference decompressor.\n");
-                debugPrint(L"\t--chk-cpu                 [Optional] Before running decompression on GPU, runs GPU decompressor code on CPU and validates its outputs against the outputs from reference decompressor.\n");
-                debugPrint(L"\t--sim-gpu                 [Optional] After running decompression on GPU, runs key GPU decompressor stages on CPU using intermediate inputs from GPU decompression and validates its outputs against the outputs from reference decompressor.\n");
-                debugPrint(L"\t--gpu-ven-id <id (hex)>   [Optional] VendorId (base16) to use when choosing GPU to run on.\n");
-                debugPrint(L"\t--gpu-dev-id <id (hex)>   [Optional] DeviceId (base16) to use when choosing GPU to run on.\n");
-                debugPrint(L"\t--d3d-dbg                 [Optional] Enables D3D12 debug layer.\n");
-                debugPrint(L"\t--d3d-gfx                 [Optional] Enables D3D12 Graphics queue (DIRECT), otherwise COMPUTE (by default).\n");
-                debugPrint(L"\t--run-cnt <count>         [Optional] The number of times to repeat the experiment.\n");
-                debugPrint(L"\t--ext-mem                 [Optional] Enables external heaps so the library doesn't create them.\n");
-                debugPrint(L"\t--prf-lvl <0, 1, 2>       [Optional] Chooses the level of profiling: 0 - overall bandwidth in GB/s, 1 - stage cost, 2 - internal pass cost.\n");
+                PrintUsage();
             }
             if (NULL == zstFilePathStorage)
             {
