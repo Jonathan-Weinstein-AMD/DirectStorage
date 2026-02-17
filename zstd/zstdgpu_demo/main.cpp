@@ -745,6 +745,41 @@ ZSTDGPU_API void zstdgpu_RetrieveGpuResults(zstdgpu_ResourceDataCpu *outGpuResou
 ZSTDGPU_API void zstdgpu_ReadbackTimestamps(zstdgpu_PerRequestContext req, ID3D12GraphicsCommandList *cmdList);
 ZSTDGPU_API void zstdgpu_RetrieveTimestamps(const wchar_t **outTimestampScopeNames, uint64_t *outTimestampScopeClocks, uint32_t *inoutTimestampScopeCnt, zstdgpu_PerRequestContext req, uint32_t stageIndex);
 
+struct WindowState
+{
+    bool bPendingResize = false;
+    bool bDestroyed = false;
+    int width  = 0; // of client rect
+    int height = 0; // of client rect
+};
+static WindowState s_window;
+
+static LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    switch (message)
+    {
+        case WM_CLOSE:
+        {
+            s_window.bDestroyed = true;
+            DestroyWindow(hWnd); // sends WM_DESTROY, invalidates hWnd
+            return 0;
+        }
+        case WM_DESTROY: // hWnd is invalid
+        {
+            PostQuitMessage(0);
+            return 0;
+        }
+        case WM_SIZE:
+        {
+            s_window.bPendingResize = true;
+            s_window.width = LOWORD(lParam);
+            s_window.height = HIWORD(lParam);
+            return 0;
+        }
+    }
+    return DefWindowProc(hWnd, message, wParam, lParam);
+}
+
 static void PrintUsage()
 {
     debugPrint(L"USAGE:\n");
@@ -759,6 +794,7 @@ static void PrintUsage()
     debugPrint(L"\t--run-cnt <count>         [Optional] The number of times to repeat the experiment.\n");
     debugPrint(L"\t--ext-mem                 [Optional] Enables external heaps so the library doesn't create them.\n");
     debugPrint(L"\t--prf-lvl <0, 1, 2>       [Optional] Chooses the level of profiling: 0 - overall bandwidth in GB/s, 1 - stage cost, 2 - internal pass cost.\n");
+    debugPrint(L"\t--present                 [Optional] Creates and presents to a swapchain for increased tool compatibility. Requires --d3d-dbg, --run cnt <count> recommended\n");
     debugPrint(L"\t--help                    [Optional] Print usage info and exit.\n");
 }
 
@@ -779,6 +815,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR lp
     bool chkGpu = false;
     bool chkCpu = false;
     bool simGpu = false;
+    bool present= false;
     bool d3dDbg = false;
     bool d3dGfx = false;
 
@@ -854,6 +891,10 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR lp
                 {
                     simGpu = true;
                 }
+                else if (0 == wcscmp(argv[argi], L"--present"))
+                {
+                    present = true;
+                }
                 else if (0 == wcscmp(argv[argi], L"--zst"))
                 {
                     nextZst = true;
@@ -918,6 +959,12 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR lp
     else
     {
         debugPrint(L"Loaded '%s' -- %u bytes.\n", zstFilePath, zstdDataSize);
+    }
+
+    if (present && !d3dGfx)
+    {
+        debugPrint(L"ERROR: --present requires --d3d-gfx\n");
+        return 1;
     }
 
     zstdgpu_CountFramesAndBlocksInfo fbInfo;
@@ -1117,6 +1164,92 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR lp
     uint32_t defaultHeapSize[3] = {0, 0, 0};
     uint32_t descriptorCount[3] = { 0, 0, 0 };
 
+    constexpr int expectedWindowWidth = 64;
+    constexpr int expectedWindowHeight = 64;
+    HWND hwnd = nullptr;
+    IDXGISwapChain3* swapchain = nullptr;
+    const UINT rtvHeapBytesPerElement = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+    ID3D12DescriptorHeap* rtvHeap = nullptr;
+    ID3D12Resource* swapchainBackbuffers[8] = {};
+
+    if (present)
+    {
+        const HINSTANCE hInstance = GetModuleHandleW(nullptr);
+
+        constexpr DWORD windowStyle = WS_VISIBLE | WS_CAPTION | WS_SYSMENU;
+
+        WNDCLASSEXW windowClass = {};
+        windowClass.cbSize = sizeof windowClass;
+        windowClass.style = CS_HREDRAW | CS_VREDRAW;
+        windowClass.lpfnWndProc = WindowProc;
+        windowClass.hInstance = hInstance;
+        windowClass.hCursor = LoadCursorW(NULL, MAKEINTRESOURCEW(32512));
+        windowClass.lpszClassName = L"XYZ";
+        RegisterClassExW(&windowClass);
+
+        RECT windowRect = { 0, 0, expectedWindowWidth, expectedWindowHeight };
+        AdjustWindowRect(&windowRect, windowStyle, FALSE);
+
+        hwnd = CreateWindowExW(
+            0, // dwExStyle
+            windowClass.lpszClassName,
+            L"zstdgpu_demo",
+            windowStyle,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            windowRect.right - windowRect.left,
+            windowRect.bottom - windowRect.top,
+            nullptr,    // We have no parent window.
+            nullptr,    // We aren't using menus.
+            hInstance,
+            nullptr);   // No user/context pointer for WM_CREATE.
+
+        DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
+        swapChainDesc.Width = expectedWindowWidth;
+        swapChainDesc.Height = expectedWindowHeight;
+        swapChainDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+        swapChainDesc.SampleDesc = {1, 0};
+        swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+        swapChainDesc.BufferCount = 2;
+        swapChainDesc.Scaling = DXGI_SCALING_STRETCH;
+        swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+        swapChainDesc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
+        swapChainDesc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
+
+        DXGI_SWAP_CHAIN_FULLSCREEN_DESC swapChainFSDesc = {};
+        swapChainFSDesc.Windowed = TRUE;
+
+        UINT dxgiFactoryFlags = d3dDbg ? DXGI_CREATE_FACTORY_DEBUG : 0;
+
+        IDXGIFactory4* dxgiFactory = nullptr;
+        const HRESULT hr0 = CreateDXGIFactory2(dxgiFactoryFlags, IID_PPV_ARGS(&dxgiFactory));
+        if (SUCCEEDED(hr0))
+        {
+            IDXGISwapChain1* swapchain1 = nullptr;
+            const HRESULT hr1 = dxgiFactory->CreateSwapChainForHwnd(
+                cmdQueue.queue,
+                hwnd,
+                &swapChainDesc,
+                &swapChainFSDesc,
+                nullptr,
+                &swapchain1);
+            if (SUCCEEDED(hr1))
+            {
+                swapchain1->QueryInterface(&swapchain);
+                swapchain1->Release();
+
+                {
+                    D3D12_DESCRIPTOR_HEAP_DESC desc = {
+                        D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
+                        8,
+                    };
+                    const HRESULT hr2 = device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(&rtvHeap));
+                }
+            }
+            dxgiFactory->Release();
+        }
+    }
+
     for (uint32_t frameIndex = 0; frameIndex < repCount; ++frameIndex)
     {
         if (zstdgpu_Demo_PlatformTick())
@@ -1127,6 +1260,47 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR lp
 #ifdef _GAMING_XBOX
             D3D12XBOX_FRAME_PIPELINE_TOKEN frameOriginToken = D3D12XBOX_FRAME_PIPELINE_TOKEN_NULL;
             D3D12AID_CHECK(device->WaitFrameEventX(D3D12XBOX_FRAME_EVENT_ORIGIN, INFINITE, NULL, D3D12XBOX_WAIT_FRAME_EVENT_FLAG_NONE, &frameOriginToken));
+#else
+            if (present)
+            {
+                MSG msg = {};
+                while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
+                {
+                    if (msg.message != WM_QUIT)
+                    {
+                        TranslateMessage(&msg);
+                        DispatchMessage(&msg);
+                    }
+                    else
+                    {
+                        debugPrint(L"Got WM_QUIT.\n");
+                        break;
+                    }
+                }
+
+                if (s_window.bPendingResize)
+                {
+                    s_window.bPendingResize = false;
+                    for (ID3D12Resource*& r : swapchainBackbuffers)
+                    {
+                        if (r)
+                        {
+                            r->Release();
+                            r = nullptr;
+                        }
+                    }
+                    HRESULT hr = swapchain->ResizeBuffers(
+                        0,
+                        s_window.width,
+                        s_window.height,
+                        DXGI_FORMAT_UNKNOWN,
+                        DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH);
+                    if (FAILED(hr))
+                    {
+                        debugPrint(L"ResizeBuffers returned 0x%X\n", hr);
+                    }
+                }
+            }
 #endif
             // Prepare the command list to render a new frame.
             const uint32_t kBackBufferIndex = frameIndex % kBackBufferCount;
@@ -1270,7 +1444,37 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR lp
                     zstdgpu_ReadbackGpuResults(perRequestContext, cmdList);
                 }
                 d3d12aid_Timestamps_AdvanceFrame(&timestamps, cmdList);
+                if (present)
+                {
+                    const UINT j = swapchain->GetCurrentBackBufferIndex();
+                    const D3D12_CPU_DESCRIPTOR_HANDLE h = {
+                        rtvHeap->GetCPUDescriptorHandleForHeapStart().ptr + j * rtvHeapBytesPerElement
+                    };
+                    if (swapchainBackbuffers[j] == nullptr)
+                    {
+                        swapchain->GetBuffer(j, IID_PPV_ARGS(&swapchainBackbuffers[j]));
+                        device->CreateRenderTargetView(swapchainBackbuffers[j], nullptr, h);
+                    }
+
+                    D3D12_RESOURCE_BARRIER barrier = {D3D12_RESOURCE_BARRIER_TYPE_TRANSITION};
+                    barrier.Transition.pResource = swapchainBackbuffers[j];
+
+                    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COMMON;
+                    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
+                    cmdList->ResourceBarrier(1, &barrier);
+
+                    const float LightBlue[4] = {173 / 255.f, 216 / 255.f, 230 / 255.f, 1};
+                    cmdList->ClearRenderTargetView(h, LightBlue, 0, nullptr);
+
+                    barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
+                    barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_COMMON;
+                    cmdList->ResourceBarrier(1, &barrier);
+                }
                 d3d12aid_CmdQueue_SubmitCmdList(&cmdQueue, 0);
+                if (present)
+                {
+                    swapchain->Present(1, 0);
+                }
                 d3d12aid_CmdQueue_CpuWaitForGpuIdle(&cmdQueue);
 
                 if (simGpu || chkGpu)
@@ -1396,6 +1600,29 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR lp
     }
 
     d3d12aid_CmdQueue_CpuWaitForGpuIdle(&cmdQueue);
+    if (swapchain)
+    {
+        for (ID3D12Resource*& r : swapchainBackbuffers)
+        {
+            if (r)
+            {
+                r->Release();
+                r = nullptr;
+            }
+        }
+        // swapchain->Release(); // the debug layer says something is in use
+        swapchain = nullptr;
+    }
+    if (rtvHeap)
+    {
+        rtvHeap->Release();
+        rtvHeap = nullptr;
+    }
+    if (hwnd && !s_window.bDestroyed)
+    {
+        DestroyWindow(hwnd);
+    }
+
     {
         void *memory = NULL;
         zstdgpu_Status status = zstdgpu_DestroyPerRequestContext(&memory, NULL, perRequestContext);
