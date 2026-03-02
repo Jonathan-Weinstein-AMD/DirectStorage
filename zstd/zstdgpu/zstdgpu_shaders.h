@@ -4118,18 +4118,17 @@ static void zstdgpu_ExecuteSequences_Lit(ZSTDGPU_PARAM_INOUT(zstdgpu_ExecuteSequ
     zstdgpu_MemCpy_DstSrc(srt.inoutUnCompressedFramesData, dstOfs, litBuf, litOfs, litEnd - litOfs, dstEnd);
 }
 
-static void zstdgpu_ShaderEntry_ExecuteSequences(ZSTDGPU_PARAM_INOUT(zstdgpu_ExecuteSequences_SRT) srt)
+static void zstdgpu_ShaderEntry_ExecuteSequences(ZSTDGPU_PARAM_INOUT(zstdgpu_ExecuteSequences_SRT) srt, uint32_t frameIdx)
 {
-    const uint32_t seqStreamCnt = srt.inoutCounters[0].Seq_Streams;
+#if SINGLE_WAVE
+    #define COUNTERS srt.inCounters_RO_Counters[0]
+#else
+    #define COUNTERS srt.inoutCounters_RW_Counters[0]
+#endif
 
-    const uint32_t frameCnt = srt.inoutCounters[0].Frames;
+    const uint32_t seqStreamCnt = COUNTERS.Seq_Streams;
 
-    uint32_t frameIdx = 0;
-    if (WaveIsFirstLane())
-    {
-        InterlockedAdd(srt.inoutCounters[0].Frames_ExecuteSequences, 1, frameIdx);
-    }
-    frameIdx = WaveReadLaneFirst(frameIdx);
+    const uint32_t frameCnt = COUNTERS.Frames;
 
     if (frameIdx >= frameCnt)
         return;
@@ -4137,7 +4136,7 @@ static void zstdgpu_ShaderEntry_ExecuteSequences(ZSTDGPU_PARAM_INOUT(zstdgpu_Exe
     const uint32_t cmpBlockBeg = srt.inPerFrameBlockCountCMP[frameIdx];
     const uint32_t cmpBlockEnd = (frameIdx + 1u < frameCnt)
                                ? srt.inPerFrameBlockCountCMP[frameIdx + 1u]
-                               : srt.inoutCounters[0].Blocks_CMP;
+                               : COUNTERS.Blocks_CMP;
 
     const uint32_t firstFrameBlockIdx = srt.inPerFrameBlockCountAll[frameIdx];
 
@@ -4189,7 +4188,7 @@ static void zstdgpu_ShaderEntry_ExecuteSequences(ZSTDGPU_PARAM_INOUT(zstdgpu_Exe
 
             ZSTDGPU_BRANCH if (seqStreamIdx + 1u == seqStreamCnt)
             {
-                seqEnd = srt.inoutCounters[0].Seq_Streams_DecodedItems;
+                seqEnd = COUNTERS.Seq_Streams_DecodedItems;
             }
             else
             {

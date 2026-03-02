@@ -273,6 +273,13 @@
         </Opts>
       </Shader>
     </ItemGroup>
+    <ItemGroup>
+      <Shader Include="$(MSBuildThisFileDirectory)Shaders\*.cs_6_6">
+        <ShaderModel>cs_6_6</ShaderModel>
+        <Opts>
+        </Opts>
+      </Shader>
+    </ItemGroup>
     <Message Text="%(Shader.FullPath)" />
   </Target>
   <Target Name="MakeShaderDirectory">

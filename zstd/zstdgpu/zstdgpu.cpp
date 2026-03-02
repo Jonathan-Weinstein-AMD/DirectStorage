@@ -62,6 +62,7 @@
 #include "ZstdGpuDecompressSequences_SingleStream_ScalarFseLoad.h"
 #include "ZstdGpuExecuteSequences128.h"
 #include "ZstdGpuExecuteSequences64.h"
+#include "ZstdGpuExecuteSequences64_SingleWave.h"
 #include "ZstdGpuExecuteSequences32.h"
 #include "ZstdGpuFinaliseSequenceOffsets.h"
 #include "ZstdGpuGroupCompressedLiterals.h"
@@ -714,6 +715,7 @@ static void zstdgpu_ReCreate_SRTs(zstdgpu_SRTs & srts, ID3D12Device *device, con
     ZSTDGPU_KERNEL(DecompressSequences_MultiStream_16_LdsOutCache_32,   L"Decompress Sequences (Multi-Stream, Streams=16, LDS Out Cache= 32 Sequences)")    \
     ZSTDGPU_KERNEL(ExecuteSequences128                              ,   L"Execute Sequences 128")                                               \
     ZSTDGPU_KERNEL(ExecuteSequences64                               ,   L"Execute Sequences 64")                                                \
+    ZSTDGPU_KERNEL(ExecuteSequences64_SingleWave                    ,   L"W64: Execute Sequences 64")                                           \
     ZSTDGPU_KERNEL(ExecuteSequences32                               ,   L"Execute Sequences 32")                                                \
     ZSTDGPU_KERNEL(FinaliseSequenceOffsets                          ,   L"Finalise Sequence Offsets")                                           \
     ZSTDGPU_KERNEL(GroupCompressedLiterals                          ,   L"Group Huffman-compressed Literals")                                   \
@@ -850,6 +852,8 @@ struct zstdgpu_PersistentContextImpl
     #undef ZSTDGPU_KERNEL
     uint32_t                DecompressLiterals_LdsStoreCache_StreamsPerGroup;
     uint32_t                DecompressSequences_StreamsPerGroup;
+
+    bool bCanForceWave64;
 };
 
 static const uint32_t kzstdgpu_SetupFlags_InputsCpuMemory       = (1u << 0);
@@ -876,6 +880,7 @@ struct zstdgpu_PerRequestContextImpl
     #undef ZSTDGPU_KERNEL
     uint32_t                DecompressLiterals_LdsStoreCache_StreamsPerGroup;
     uint32_t                DecompressSequences_StreamsPerGroup;
+    bool                    bCanForceWave64;
 
     zstdgpu_SRTs            srts;
     zstdgpu_ResourceDataGpu resData;
@@ -993,6 +998,17 @@ ZSTDGPU_ENUM(Status) zstdgpu_CreatePersistentContext(zstdgpu_PersistentContext *
         D3D12AID_CHECK(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS1, ZSTDGPU_WARN_DISABLE_MSVC(6001, &featureOptions1), sizeof(featureOptions1)));
         ZSTDGPU_ASSERT(featureOptions1.Int64ShaderOps); // 64-bit integer shader ops required for Forward_BitBuffer
 
+        D3D12_FEATURE_DATA_SHADER_MODEL featureShaderModel = {D3D_SHADER_MODEL_6_6};
+        D3D12AID_CHECK(device->CheckFeatureSupport(
+            D3D12_FEATURE_SHADER_MODEL,
+            ZSTDGPU_WARN_DISABLE_MSVC(6001, &featureShaderModel),
+            sizeof(featureShaderModel)));
+
+        const bool bCanForceWave64 =
+            (featureOptions1.WaveLaneCountMax == 64 &&
+             featureShaderModel.HighestShaderModel >= D3D_SHADER_MODEL_6_6);
+        context->bCanForceWave64 = bCanForceWave64;
+
         const LUID luid = device->GetAdapterLuid();
 
         IDXGIAdapter* adapter = NULL;
@@ -1005,7 +1021,7 @@ ZSTDGPU_ENUM(Status) zstdgpu_CreatePersistentContext(zstdgpu_PersistentContext *
         D3D12AID_CHECK(adapter->GetDesc(&desc));
         D3D12AID_SAFE_RELEASE(adapter);
 
-        if (desc.VendorId == 0x1002)
+        if (desc.VendorId == 0x1002) // AMD
         {
             ZSTDGPU_KERNEL_MAP(DecompressLiterals, DecompressLiterals_LdsStoreCache64_16);
             context->DecompressLiterals_LdsStoreCache_StreamsPerGroup = 16;
@@ -1038,16 +1054,24 @@ ZSTDGPU_ENUM(Status) zstdgpu_CreatePersistentContext(zstdgpu_PersistentContext *
             context->DecompressSequences_StreamsPerGroup = 1;
             ZSTDGPU_KERNEL_MAP(ExecuteSequences, ExecuteSequences32);
         }
+
+        if (bCanForceWave64)
+        {
+            ZSTDGPU_KERNEL_MAP(ExecuteSequences, ExecuteSequences64_SingleWave);
+        }
 #endif
         #undef ZSTDGPU_KERNEL_GET
         #undef ZSTDGPU_KERNEL_MAP
 
         /** NOTE(pamartis): generate PipelineState / RootSignature initialisation through macro list */
-        #define ZSTDGPU_KERNEL(name) \
-            d3d12aid_ComputeRsPs_Create(&context->name, device, shader##name->code, shader##name->size);\
-            context->name.rs->SetName(shader##name->desc);\
-            context->name.ps->SetName(shader##name->desc);
-            ZSTDGPU_RUNTIME_KERNEL_LIST()
+        #define ZSTDGPU_KERNEL(name)                                                                        \
+            if (bCanForceWave64 || wcsncmp(shader##name->desc, L"W64:", 4) != 0)                            \
+            {                                                                                               \
+                d3d12aid_ComputeRsPs_Create(&context->name, device, shader##name->code, shader##name->size);\
+                context->name.rs->SetName(shader##name->desc);                                              \
+                context->name.ps->SetName(shader##name->desc);                                              \
+            }
+        ZSTDGPU_RUNTIME_KERNEL_LIST()
         #undef ZSTDGPU_KERNEL
 
         /** NOTE(pamartis): generate CommandSignatures through macro list specifying what kernels/root signatures need command signatures for indirect dispatch */
@@ -1125,14 +1149,15 @@ ZSTDGPU_ENUM(Status) zstdgpu_CreatePerRequestContext(zstdgpu_PerRequestContext *
         #undef ZSTDGPU_DISPATCH32_CMD_SIG
 
         /** NOTE(pamartis): generate PipelineState / RootSignature initialisation through macro list */
-        #define ZSTDGPU_KERNEL(name)                \
-            context->name = persistentContext->name;\
-            context->name.rs->AddRef();             \
-            context->name.ps->AddRef();
-            ZSTDGPU_RUNTIME_KERNEL_LIST()
+        #define ZSTDGPU_KERNEL(name)                            \
+            context->name = persistentContext->name;            \
+            if (context->name.rs) context->name.rs->AddRef();   \
+            if (context->name.ps) context->name.ps->AddRef();
+        ZSTDGPU_RUNTIME_KERNEL_LIST()
         #undef ZSTDGPU_KERNEL
         context->DecompressLiterals_LdsStoreCache_StreamsPerGroup = persistentContext->DecompressLiterals_LdsStoreCache_StreamsPerGroup;
         context->DecompressSequences_StreamsPerGroup = persistentContext->DecompressSequences_StreamsPerGroup;
+        context->bCanForceWave64 = persistentContext->bCanForceWave64;
 
         context->srts.heap = NULL;
         context->srts.heapOffset = 0;
@@ -2781,8 +2806,14 @@ void zstdgpu_SubmitStage2(zstdgpu_PerRequestContext req, ID3D12GraphicsCommandLi
             setResourceUavSync(barriers, bc + 0, req->resData.gpuOnly.UnCompressedFramesData);
             bc += 1;
         }
-        // next written by [Execute Sequences] when allocating
-        setResourceSrvCopyIndirectToUavSync(barriers, bc + 0, req->resData.gpuOnly.Counters);
+        // next written by [Execute Sequences] when allocating, or read as SRV, have COMMON and implicit buffer promotion handle both:
+        barriers[bc + 0] = {
+            D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+            D3D12_RESOURCE_BARRIER_FLAG_NONE,
+            {req->resData.gpuOnly.Counters,
+             D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+             D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT | D3D12_RESOURCE_STATE_COPY_SOURCE,
+             D3D12_RESOURCE_STATE_COMMON}};
         bc += 1;
 
         cmdList->ResourceBarrier(bc, barriers);
@@ -2801,9 +2832,12 @@ void zstdgpu_SubmitStage2(zstdgpu_PerRequestContext req, ID3D12GraphicsCommandLi
     if (req->zstdCmpBlockCountMax > 0)
     {
         PIXBeginEvent(cmdList, PIX_COLOR_DEFAULT, L"Barrier with Resources for [Readback Counters :: After Block Decompression]");
-        D3D12_RESOURCE_BARRIER barriers[1];
-        setResourceUavToSrvSync(barriers, 0, req->resData.gpuOnly.Counters);
-        cmdList->ResourceBarrier(_countof(barriers), barriers);
+        if (!req->bCanForceWave64)
+        {
+            D3D12_RESOURCE_BARRIER barriers[1];
+            setResourceUavToSrvSync(barriers, 0, req->resData.gpuOnly.Counters);
+            cmdList->ResourceBarrier(_countof(barriers), barriers);
+        }
         PIXEndEvent(cmdList);
     }
     if (0) /** IMPORTANT: requires DecompressedSequencesMLen to contain inclusive prefix of total sequence sizes */

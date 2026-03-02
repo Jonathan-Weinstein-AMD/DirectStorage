@@ -1703,9 +1703,10 @@ static inline uint32_t zstdgpu_InitResources_GetDispatchSizeX(uint32_t initResou
     ZSTDGPU_RO_BUFFER_DECL(zstdgpu_CompressedBlockData          , CompressedBlocks              ,10)    \
     \
     ZSTDGPU_RO_TYPED_BUFFER_DECL(uint32_t, uint8_t              , DecompressedLiterals          ,11)    \
+    ZSTDGPU_RO_BUFFER_ALIAS_DECL(zstdgpu_Counters               , Counters, RO_Counters         ,12)    \
     \
     ZSTDGPU_RW_TYPED_BUFFER_DECL(uint32_t, uint8_t              , UnCompressedFramesData        , 0)    \
-    ZSTDGPU_RW_BUFFER_DECL(zstdgpu_Counters                     , Counters                      , 1)
+    ZSTDGPU_RW_BUFFER_ALIAS_DECL(zstdgpu_Counters               , Counters, RW_Counters         , 1)
 
 #define ZSTDGPU_COMPUTE_DEST_SEQUENCE_OFFSETS_SRT()                                                     \
     ZSTDGPU_RO_BUFFER_DECL(zstdgpu_Counters                     , Counters                      , 0)    \
