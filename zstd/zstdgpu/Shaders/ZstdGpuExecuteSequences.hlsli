@@ -22,6 +22,9 @@ ZSTDGPU_EXECUTE_SEQUENCES_SRT()
 
 [RootSignature("DescriptorTable(SRV(t0, numDescriptors=12), UAV(u0, numDescriptors=2))")]
 [numthreads(MAX_COPY_SIZE, 1, 1)]
+#if SINGLE_WAVE
+[wavesize(MAX_COPY_SIZE)]
+#endif
 void main(uint groupId : SV_GroupId, uint i : SV_GroupThreadId)
 {
     zstdgpu_ExecuteSequences_SRT srt;
@@ -30,5 +33,16 @@ void main(uint groupId : SV_GroupId, uint i : SV_GroupThreadId)
     ZSTDGPU_EXECUTE_SEQUENCES_SRT()
     #include "../zstdgpu_srt_decl_undef.h"
 
-    zstdgpu_ShaderEntry_ExecuteSequences(srt);
+#if SINGLE_WAVE
+    const uint32_t frameIdx = groupId;
+#else
+    uint32_t frameIdx = 0;
+    if (WaveIsFirstLane())
+    {
+        InterlockedAdd(srt.inoutCounters[kzstdgpu_CounterIndex_Frames_ExecuteSequences], 1, frameIdx);
+    }
+    frameIdx = WaveReadLaneFirst(frameIdx);
+#endif
+
+    zstdgpu_ShaderEntry_ExecuteSequences(srt, frameIdx);
 }

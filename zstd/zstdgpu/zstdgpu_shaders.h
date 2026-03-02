@@ -4212,18 +4212,11 @@ static void zstdgpu_ExecuteSequences_Lit(ZSTDGPU_PARAM_INOUT(zstdgpu_ExecuteSequ
     zstdgpu_MemCpy_DstSrc(srt.inoutUnCompressedFramesData, dstOfs, litBuf, litOfs, litEnd - litOfs, dstEnd);
 }
 
-static void zstdgpu_ShaderEntry_ExecuteSequences(ZSTDGPU_PARAM_INOUT(zstdgpu_ExecuteSequences_SRT) srt)
+static void zstdgpu_ShaderEntry_ExecuteSequences(ZSTDGPU_PARAM_INOUT(zstdgpu_ExecuteSequences_SRT) srt, uint32_t frameIdx)
 {
     const uint32_t seqStreamCnt = srt.inoutCounters[kzstdgpu_CounterIndex_Seq_Streams];
 
     const uint32_t frameCnt = srt.inoutCounters[kzstdgpu_CounterIndex_Frames];
-
-    uint32_t frameIdx = 0;
-    if (WaveIsFirstLane())
-    {
-        InterlockedAdd(srt.inoutCounters[kzstdgpu_CounterIndex_Frames_ExecuteSequences], 1, frameIdx);
-    }
-    frameIdx = WaveReadLaneFirst(frameIdx);
 
     if (frameIdx >= frameCnt)
         return;

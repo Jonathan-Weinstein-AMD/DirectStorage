@@ -54,6 +54,7 @@
 #include "ZstdGpuDecompressSequences_Scalar32.h"
 #include "ZstdGpuExecuteSequences128.h"
 #include "ZstdGpuExecuteSequences64.h"
+#include "ZstdGpuExecuteSequences64_SingleWave.h"
 #include "ZstdGpuExecuteSequences32.h"
 #include "ZstdGpuFinaliseSequenceOffsets.h"
 #include "ZstdGpuGroupCompressedLiterals.h"
@@ -323,40 +324,47 @@ static void zstdgpu_ReCreate_SRTs(zstdgpu_SRTs & srts, ID3D12Device *device, con
     #include "zstdgpu_srt_decl_undef.h"
 }
 
+enum KernelFlags
+{
+    // In theory we could extract this from the DXIL or have some metadata next to it, but this is simple enough and lean.
+    KernelWave64 = 1u << 0,
+};
+
 #define ZSTDGPU_KERNEL_LIST()                                                                                                           \
-    ZSTDGPU_KERNEL(ComputeDestSequenceOffsets               ,   L"Compute Destination Sequence Offsets")                                \
-    ZSTDGPU_KERNEL(ComputePrefixSum                         ,   L"Compute Prefix of Literal and TG Count for Literal Decompression")    \
-    ZSTDGPU_KERNEL(DecodeHuffmanWeights                     ,   L"Decode (from nibbles) Uncompressed Huffman Weights")                  \
-    ZSTDGPU_KERNEL(DecompressHuffmanWeights                 ,   L"Decompress FSE-compressed Huffman Weights")                           \
-    ZSTDGPU_KERNEL(DecompressLiterals                       ,   L"Decompress Literals")                                                 \
-    ZSTDGPU_KERNEL(DecompressLiterals_LdsStoreCache128_8    ,   L"Decompress Literals (LDS Store Cache=128 Dwords, Stream Count= 8)")   \
-    ZSTDGPU_KERNEL(DecompressLiterals_LdsStoreCache64_16    ,   L"Decompress Literals (LDS Store Cache= 64 Dwords, Stream Count=16)")   \
-    ZSTDGPU_KERNEL(DecompressLiterals_LdsStoreCache64_8     ,   L"Decompress Literals (LDS Store Cache= 64 Dwords, Stream Count= 8)")   \
-    ZSTDGPU_KERNEL(DecompressLiterals_LdsStoreCache32_32    ,   L"Decompress Literals (LDS Store Cache= 32 Dwords, Stream Count=32)")   \
-    ZSTDGPU_KERNEL(DecompressLiterals_LdsStoreCache32_16    ,   L"Decompress Literals (LDS Store Cache= 32 Dwords, Stream Count=16)")   \
-    ZSTDGPU_KERNEL(DecompressLiterals_LdsStoreCache32_8     ,   L"Decompress Literals (LDS Store Cache= 32 Dwords, Stream Count= 8)")   \
-    ZSTDGPU_KERNEL(DecompressSequences                      ,   L"Decompress Sequences")                                                \
-    ZSTDGPU_KERNEL(DecompressSequences_LdsFseCache128       ,   L"Decompress Sequences (LDS FSE Cache, TG Size= 128)")                  \
-    ZSTDGPU_KERNEL(DecompressSequences_LdsFseCache64        ,   L"Decompress Sequences (LDS FSE Cache, TG Size=  64)")                  \
-    ZSTDGPU_KERNEL(DecompressSequences_LdsFseCache32        ,   L"Decompress Sequences (LDS FSE Cache, TG Size=  32)")                  \
-    ZSTDGPU_KERNEL(DecompressSequences_Scalar128            ,   L"Decompress Sequences (Scalar, TG Size= 128)")                         \
-    ZSTDGPU_KERNEL(DecompressSequences_Scalar64             ,   L"Decompress Sequences (Scalar, TG Size=  64)")                         \
-    ZSTDGPU_KERNEL(DecompressSequences_Scalar32             ,   L"Decompress Sequences (Scalar, TG Size=  32)")                         \
-    ZSTDGPU_KERNEL(ExecuteSequences128                      ,   L"Execute Sequences 128")                                               \
-    ZSTDGPU_KERNEL(ExecuteSequences64                       ,   L"Execute Sequences 64")                                                \
-    ZSTDGPU_KERNEL(ExecuteSequences32                       ,   L"Execute Sequences 32")                                                \
-    ZSTDGPU_KERNEL(FinaliseSequenceOffsets                  ,   L"Finalise Sequence Offsets")                                           \
-    ZSTDGPU_KERNEL(GroupCompressedLiterals                  ,   L"Group Huffman-compressed Literals")                                   \
-    ZSTDGPU_KERNEL(InitFseTable                             ,   L"Init Fse Table")                                                      \
-    ZSTDGPU_KERNEL(InitHuffmanTable                         ,   L"Init Huffman Table")                                                  \
-    ZSTDGPU_KERNEL(InitHuffmanTableAndDecompressLiterals    ,   L"Init Huffman Table and Decompress Literals")                          \
-    ZSTDGPU_KERNEL(InitResources                            ,   L"Init Resources")                                                      \
-    ZSTDGPU_KERNEL(MemsetMemcpy                             ,   L"Memset-Memcpy")                                                       \
-    ZSTDGPU_KERNEL(ParseCompressedBlocks                    ,   L"Parse Compressed Blocks")                                             \
-    ZSTDGPU_KERNEL(ParseFrames                              ,   L"Parse Frames")                                                        \
-    ZSTDGPU_KERNEL(PrefixSequenceOffsets                    ,   L"Prefix Sequence Offsets")                                             \
-    ZSTDGPU_KERNEL(PrefixSum                                ,   L"Prefix Sum")                                                          \
-    ZSTDGPU_KERNEL(UpdateDispatchArgs                       ,   L"Update Dispatch Args")
+    ZSTDGPU_KERNEL(ComputeDestSequenceOffsets               ,   L"Compute Destination Sequence Offsets", 0)                             \
+    ZSTDGPU_KERNEL(ComputePrefixSum                         ,   L"Compute Prefix of Literal and TG Count for Literal Decompression", 0) \
+    ZSTDGPU_KERNEL(DecodeHuffmanWeights                     ,   L"Decode (from nibbles) Uncompressed Huffman Weights", 0)               \
+    ZSTDGPU_KERNEL(DecompressHuffmanWeights                 ,   L"Decompress FSE-compressed Huffman Weights", 0)                        \
+    ZSTDGPU_KERNEL(DecompressLiterals                       ,   L"Decompress Literals", 0)                                              \
+    ZSTDGPU_KERNEL(DecompressLiterals_LdsStoreCache128_8    ,   L"Decompress Literals (LDS Store Cache=128 Dwords, Stream Count= 8)", 0)\
+    ZSTDGPU_KERNEL(DecompressLiterals_LdsStoreCache64_16    ,   L"Decompress Literals (LDS Store Cache= 64 Dwords, Stream Count=16)", 0)\
+    ZSTDGPU_KERNEL(DecompressLiterals_LdsStoreCache64_8     ,   L"Decompress Literals (LDS Store Cache= 64 Dwords, Stream Count= 8)", 0)\
+    ZSTDGPU_KERNEL(DecompressLiterals_LdsStoreCache32_32    ,   L"Decompress Literals (LDS Store Cache= 32 Dwords, Stream Count=32)", 0)\
+    ZSTDGPU_KERNEL(DecompressLiterals_LdsStoreCache32_16    ,   L"Decompress Literals (LDS Store Cache= 32 Dwords, Stream Count=16)", 0)\
+    ZSTDGPU_KERNEL(DecompressLiterals_LdsStoreCache32_8     ,   L"Decompress Literals (LDS Store Cache= 32 Dwords, Stream Count= 8)", 0)\
+    ZSTDGPU_KERNEL(DecompressSequences                      ,   L"Decompress Sequences", 0)                                             \
+    ZSTDGPU_KERNEL(DecompressSequences_LdsFseCache128       ,   L"Decompress Sequences (LDS FSE Cache, TG Size= 128)", 0)               \
+    ZSTDGPU_KERNEL(DecompressSequences_LdsFseCache64        ,   L"Decompress Sequences (LDS FSE Cache, TG Size=  64)", 0)               \
+    ZSTDGPU_KERNEL(DecompressSequences_LdsFseCache32        ,   L"Decompress Sequences (LDS FSE Cache, TG Size=  32)", 0)               \
+    ZSTDGPU_KERNEL(DecompressSequences_Scalar128            ,   L"Decompress Sequences (Scalar, TG Size= 128)", 0)                      \
+    ZSTDGPU_KERNEL(DecompressSequences_Scalar64             ,   L"Decompress Sequences (Scalar, TG Size=  64)", 0)                      \
+    ZSTDGPU_KERNEL(DecompressSequences_Scalar32             ,   L"Decompress Sequences (Scalar, TG Size=  32)", 0)                      \
+    ZSTDGPU_KERNEL(ExecuteSequences128                      ,   L"Execute Sequences 128", 0)                                            \
+    ZSTDGPU_KERNEL(ExecuteSequences64                       ,   L"Execute Sequences 64 (unspecified WaveSize)", 0)                      \
+    ZSTDGPU_KERNEL(ExecuteSequences64_SingleWave            ,   L"Execute Sequences 64 (WaveSize(64))", KernelWave64)                   \
+    ZSTDGPU_KERNEL(ExecuteSequences32                       ,   L"Execute Sequences 32", 0)                                             \
+    ZSTDGPU_KERNEL(FinaliseSequenceOffsets                  ,   L"Finalise Sequence Offsets", 0)                                        \
+    ZSTDGPU_KERNEL(GroupCompressedLiterals                  ,   L"Group Huffman-compressed Literals", 0)                                \
+    ZSTDGPU_KERNEL(InitFseTable                             ,   L"Init Fse Table", 0)                                                   \
+    ZSTDGPU_KERNEL(InitHuffmanTable                         ,   L"Init Huffman Table", 0)                                               \
+    ZSTDGPU_KERNEL(InitHuffmanTableAndDecompressLiterals    ,   L"Init Huffman Table and Decompress Literals", 0)                       \
+    ZSTDGPU_KERNEL(InitResources                            ,   L"Init Resources", 0)                                                   \
+    ZSTDGPU_KERNEL(MemsetMemcpy                             ,   L"Memset-Memcpy", 0)                                                    \
+    ZSTDGPU_KERNEL(ParseCompressedBlocks                    ,   L"Parse Compressed Blocks", 0)                                          \
+    ZSTDGPU_KERNEL(ParseFrames                              ,   L"Parse Frames", 0)                                                     \
+    ZSTDGPU_KERNEL(PrefixSequenceOffsets                    ,   L"Prefix Sequence Offsets", 0)                                          \
+    ZSTDGPU_KERNEL(PrefixSum                                ,   L"Prefix Sum", 0)                                                       \
+    ZSTDGPU_KERNEL(UpdateDispatchArgs                       ,   L"Update Dispatch Args", 0)
 
 #define ZSTDGPU_KERNEL_SCOPE_LIST_STAGE_0() \
     ZSTDGPU_KERNEL_SCOPE_X(InitResources_CountBlocks            , L"Init Resources"             )   \
@@ -404,7 +412,7 @@ struct zstdgpu_PersistentContextImpl
     uint32_t                 minLaneCount;
     uint32_t                 maxLaneCount;
 
-    #define ZSTDGPU_KERNEL(name, desc) d3d12aid_ComputeRsPs name;
+    #define ZSTDGPU_KERNEL(name, desc, flags) d3d12aid_ComputeRsPs name;
         ZSTDGPU_KERNEL_LIST()
     #undef ZSTDGPU_KERNEL
 };
@@ -423,7 +431,7 @@ struct zstdgpu_PerRequestContextImpl
     ID3D12Device            *device;
     ID3D12CommandSignature  *dispatchCmdSig;
 
-    #define ZSTDGPU_KERNEL(name, desc) d3d12aid_ComputeRsPs name;
+    #define ZSTDGPU_KERNEL(name, desc, flags) d3d12aid_ComputeRsPs name;
         ZSTDGPU_KERNEL_LIST()
     #undef ZSTDGPU_KERNEL
     d3d12aid_ComputeRsPs    ExecuteSequences;
@@ -497,6 +505,7 @@ ZSTDGPU_ENUM(Status) zstdgpu_CreatePersistentContext(zstdgpu_PersistentContext *
     if (proceed > 0)
     {
         zstdgpu_PersistentContextImpl *context = (zstdgpu_PersistentContextImpl *)memoryBlock;
+        memset(context, 0, sizeof *context);
         context->thisMemoryBlock = memoryBlock;
 
         context->device = device;
@@ -517,11 +526,22 @@ ZSTDGPU_ENUM(Status) zstdgpu_CreatePersistentContext(zstdgpu_PersistentContext *
         context->minLaneCount = featureOptions1.WaveLaneCountMin;
         context->maxLaneCount = featureOptions1.WaveLaneCountMax;
 
-        /** NOTE(pamartis): generate PipelineState / RootSignature initialisation through macro list */
-        #define ZSTDGPU_KERNEL(name, desc) \
-            d3d12aid_ComputeRsPs_Create(&context->name, device, g_ZstdGpu##name, sizeof(g_ZstdGpu##name));\
-            context->name.rs->SetName(desc);\
-            context->name.ps->SetName(desc);
+        D3D12_FEATURE_DATA_SHADER_MODEL featureShaderModel = { D3D_SHADER_MODEL_6_6 };
+        D3D12AID_CHECK(device->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, ZSTDGPU_WARN_DISABLE_MSVC(6001, &featureShaderModel), sizeof(featureShaderModel)));
+
+        // NOTE(pamartis): Generate PipelineState / RootSignature initialisation through macro list.
+        // Use non-const local variable 'f' to avoid MSVC warning C4127: conditional expression is constant.
+        #define ZSTDGPU_KERNEL(name, desc, flags)                                                                               \
+            {                                                                                                                   \
+                unsigned f = (flags);                                                                                           \
+                if (!(f & KernelWave64) ||                                                                                      \
+                    (featureOptions1.WaveLaneCountMax == 64 && featureShaderModel.HighestShaderModel >= D3D_SHADER_MODEL_6_6))  \
+                {                                                                                                               \
+                    d3d12aid_ComputeRsPs_Create(&context->name, device, g_ZstdGpu##name, sizeof(g_ZstdGpu##name));              \
+                    context->name.rs->SetName(desc);                                                                            \
+                    context->name.ps->SetName(desc);                                                                            \
+                }                                                                                                               \
+            }
 
             ZSTDGPU_KERNEL_LIST()
         #undef ZSTDGPU_KERNEL
@@ -540,7 +560,7 @@ ZSTDGPU_ENUM(Status) zstdgpu_DestroyPersistentContext(void **outMemoryBlock, uin
 
     if (proceed > 0)
     {
-        #define ZSTDGPU_KERNEL(name, desc) d3d12aid_ComputeRsPs_Release(&inPersistentContext->name);
+        #define ZSTDGPU_KERNEL(name, desc, flags) d3d12aid_ComputeRsPs_Release(&inPersistentContext->name);
             ZSTDGPU_KERNEL_LIST()
         #undef ZSTDGPU_KERNEL
 
@@ -573,6 +593,7 @@ ZSTDGPU_ENUM(Status) zstdgpu_CreatePerRequestContext(zstdgpu_PerRequestContext *
     if (proceed > 0)
     {
         zstdgpu_PerRequestContextImpl *context = (zstdgpu_PerRequestContextImpl *)memoryBlock;
+        memset(context, 0, sizeof *context);
         context->thisMemoryBlock = memoryBlock;
 
         context->device = persistentContext->device;
@@ -582,10 +603,13 @@ ZSTDGPU_ENUM(Status) zstdgpu_CreatePerRequestContext(zstdgpu_PerRequestContext *
         context->dispatchCmdSig->AddRef();
 
         /** NOTE(pamartis): generate PipelineState / RootSignature initialisation through macro list */
-        #define ZSTDGPU_KERNEL(name, desc)          \
-            context->name = persistentContext->name;\
-            context->name.rs->AddRef();             \
-            context->name.ps->AddRef();
+        #define ZSTDGPU_KERNEL(name, desc, flags)       \
+            context->name = persistentContext->name;    \
+            if (persistentContext->name.ps != nullptr)  \
+            {                                           \
+                context->name.rs->AddRef();             \
+                context->name.ps->AddRef();             \
+            }
             ZSTDGPU_KERNEL_LIST()
         #undef ZSTDGPU_KERNEL
 #ifdef _GAMING_XBOX_SCARLETT
@@ -603,7 +627,9 @@ ZSTDGPU_ENUM(Status) zstdgpu_CreatePerRequestContext(zstdgpu_PerRequestContext *
         }
         else if (persistentContext->maxLaneCount == 64)
         {
-            context->ExecuteSequences = context->ExecuteSequences64;
+            // _SingleWave is only compiled on drivers reporting SM6.6+ support.
+            context->ExecuteSequences = context->ExecuteSequences64_SingleWave.ps ? context->ExecuteSequences64_SingleWave
+                                                                                  : context->ExecuteSequences64;
             context->DecompressSequences_LdsFseCache = context->DecompressSequences_LdsFseCache64;
             context->DecompressLiterals_LdsStoreCache = context->DecompressLiterals_LdsStoreCache64_16;
             context->DecompressLiterals_LdsStoreCache_StreamsPerGroup = 16;
@@ -690,7 +716,7 @@ ZSTDGPU_ENUM(Status) zstdgpu_DestroyPerRequestContext(void **outMemoryBlock, uin
         d3d12aid_ComputeRsPs_Release(&inPerRequestContext->ExecuteSequences);
         d3d12aid_ComputeRsPs_Release(&inPerRequestContext->DecompressSequences_LdsFseCache);
         d3d12aid_ComputeRsPs_Release(&inPerRequestContext->DecompressLiterals_LdsStoreCache);
-        #define ZSTDGPU_KERNEL(name, desc) d3d12aid_ComputeRsPs_Release(&inPerRequestContext->name);
+        #define ZSTDGPU_KERNEL(name, desc, flags) d3d12aid_ComputeRsPs_Release(&inPerRequestContext->name);
             ZSTDGPU_KERNEL_LIST()
         #undef ZSTDGPU_KERNEL
 
