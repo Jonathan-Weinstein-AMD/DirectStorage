@@ -20,9 +20,11 @@ struct zstdgpu_OffsetAndSize
 
 struct zstdgpu_FrameInfo
 {
-    uint64_t windowSize;
+#ifndef __hlsl_dx_compiler // CPU-only:
     uint64_t uncompSize;
-    uint32_t dictionary;
+#else // could maybe remove, not sure CPU/GPU sizeof must match:
+    uint64_t reserved;
+#endif
 
     uint32_t rrBlockStart;
     uint32_t cmpBlockStart;

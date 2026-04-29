@@ -551,7 +551,7 @@ static uint32_t zstdgpu_Test_DecompressedDataPerBlockType(const uint32_t *gpuGlo
  *  @brief  This function executes GPU Decompression pipeline on CPU (by calling shader function on CPU)
  *          to give opportunity to catch errors early
  */
-static void zstdgpu_Validate_GpuDecompressOnCpu(zstdgpu_ResourceDataCpu & zstdCpu, const void *zstdGpuCompressedData, const zstdgpu_OffsetAndSize *zstdFrameRefs, uint32_t zstdFrameCount, uint32_t zstdCompressedFramesByteCount, uint64_t zstdUncompressedFramesByteCount)
+static void zstdgpu_Validate_GpuDecompressOnCpu(zstdgpu_ResourceDataCpu & zstdCpu, const void *zstdGpuCompressedData, const zstdgpu_OffsetAndSize *zstdFrameRefs, uint32_t zstdFrameCount, uint32_t zstdCompressedFramesByteCount)
 {
     zstdgpu_ResourceInfo zstdInfo;
     zstdgpu_ResourceInfo_InitZero(&zstdInfo);
@@ -589,7 +589,6 @@ static void zstdgpu_Validate_GpuDecompressOnCpu(zstdgpu_ResourceDataCpu & zstdCp
         }
     }
     ZSTDGPU_ASSERT(zstdFrameCount == CNTRS(Frames));
-    ZSTDGPU_ASSERT(zstdUncompressedFramesByteCount == CNTRS(Frames_UncompressedByteSize));
 
     const uint32_t zstdRRBlockCount = CNTRS(Blocks_RR);
     const uint32_t zstdCmpBlockCount = CNTRS(Blocks_CMP);
@@ -1240,7 +1239,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE, _In_ LPWSTR lp
         debugPrint(L"[VALIDATION] Running GPU Decompression code on CPU ('--chk-cpu' option was set).\n");
         // NOTE(pamartis): We run GPU Decompression pipeline on CPU to catch possible errors/assert early
         // TODO(pamartis): Because currently we don't know "frame count" and "uncompressed size" we pass that information from fbInfo.
-        zstdgpu_Validate_GpuDecompressOnCpu(zstdCpu, zstdData, zstdInFrameRefs, fbInfo.frameCount, zstdDataSize, fbInfo.frameByteCount);
+        zstdgpu_Validate_GpuDecompressOnCpu(zstdCpu, zstdData, zstdInFrameRefs, fbInfo.frameCount, zstdDataSize);
         if (!simGpu)
         {
             zstdgpu_ResourceDataCpu_MarkReadOnly(&zstdCpu);

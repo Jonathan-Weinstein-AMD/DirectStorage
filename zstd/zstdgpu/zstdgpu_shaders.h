@@ -303,9 +303,11 @@ static inline void zstdgpu_ShaderEntry_ParseFrame(ZSTDGPU_PARAM_INOUT(zstdgpu_Fr
     // Multiple frames can be appended into a single file or stream. A frame is
     // totally independent, has a defined beginning and end, and a set of
     // parameters which tells the decoder how to decompress it."
-    outFrameInfo.windowSize = 0;
+#ifndef __hlsl_dx_compiler // CPU-only:
     outFrameInfo.uncompSize = 0;
-    outFrameInfo.dictionary = 0;
+#else
+    outFrameInfo.reserved = 0;
+#endif
 
     const uint32_t descriptor = zstdgpu_Forward_BitBuffer_Get(bits, 8);
 
@@ -319,7 +321,8 @@ static inline void zstdgpu_ShaderEntry_ParseFrame(ZSTDGPU_PARAM_INOUT(zstdgpu_Fr
     }
 
     const uint32_t singleSegmentFlag = zstdgpu_BitFieldExtractU32(descriptor, 5, 1);
-    //
+
+    uint64_t windowSize = 0;
     if (0 == singleSegmentFlag)
     {
         const uint32_t windowDescriptor = zstdgpu_Forward_BitBuffer_Get(bits, 8);
@@ -337,7 +340,7 @@ static inline void zstdgpu_ShaderEntry_ParseFrame(ZSTDGPU_PARAM_INOUT(zstdgpu_Fr
         // https://github.com/facebook/zstd/blob/dev/doc/zstd_compression_format.md#window_descriptor
         const uint64_t windowBase = 1ull << (10 + exponent);
         const uint64_t windowAdd = (windowBase / 8) * mantissa;
-        outFrameInfo.windowSize = windowBase + windowAdd;
+        windowSize = windowBase + windowAdd;
     }
 
     const uint32_t dictionaryIdFlag = zstdgpu_BitFieldExtractU32(descriptor, 0, 2);
@@ -350,11 +353,14 @@ static inline void zstdgpu_ShaderEntry_ParseFrame(ZSTDGPU_PARAM_INOUT(zstdgpu_Fr
         const uint32_t byteCount[] = { 0u, 1u, 2u, 4u };
         const uint32_t bitCount = byteCount[dictionaryIdFlag] * 8u;
 
-        outFrameInfo.dictionary = zstdgpu_Forward_BitBuffer_Get(bits, bitCount);
+        const uint32_t dictionary = zstdgpu_Forward_BitBuffer_Get(bits, bitCount);
+        ZSTDGPU_ASSERT(dictionary == 0);
+        (void)dictionary;
     }
 
     const uint32_t frameContentSizeFlag = zstdgpu_BitFieldExtractU32(descriptor, 6, 2);
 
+    uint64_t uncompSize = 0;
     if (0 != singleSegmentFlag || 0 != frameContentSizeFlag)
     {
         // "This is the original (uncompressed) size. This information is
@@ -369,19 +375,21 @@ static inline void zstdgpu_ShaderEntry_ParseFrame(ZSTDGPU_PARAM_INOUT(zstdgpu_Fr
 
         if (bitCount == 64)
         {
-            outFrameInfo.uncompSize = zstdgpu_Forward_BitBuffer_Get(bits, 32);
-            outFrameInfo.uncompSize |= (uint64_t)zstdgpu_Forward_BitBuffer_Get(bits, 32) << 32;
+            uncompSize = zstdgpu_Forward_BitBuffer_Get(bits, 32);
+            uncompSize |= (uint64_t)zstdgpu_Forward_BitBuffer_Get(bits, 32) << 32;
         }
         else
         {
-            outFrameInfo.uncompSize = zstdgpu_Forward_BitBuffer_Get(bits, bitCount);
+            uncompSize = zstdgpu_Forward_BitBuffer_Get(bits, bitCount);
         }
 
         if (16u == bitCount)
         {
             // "When Field_Size is 2, the offset of 256 is added."
-            outFrameInfo.uncompSize += 256;
+            uncompSize += 256;
         }
+
+        (void)uncompSize;
     }
 
     if (0 != singleSegmentFlag)
@@ -390,8 +398,13 @@ static inline void zstdgpu_ShaderEntry_ParseFrame(ZSTDGPU_PARAM_INOUT(zstdgpu_Fr
         // Single_Segment_flag is set. In this case, the maximum back-reference
         // distance is the content size itself, which can be any value from 1 to
         // 2^64-1 bytes (16 EB)."
-        outFrameInfo.windowSize = outFrameInfo.uncompSize;
+        windowSize = uncompSize;
     }
+
+    (void)windowSize;
+#ifndef __hlsl_dx_compiler // CPU-only:
+    outFrameInfo.uncompSize = uncompSize;
+#endif
 
     //
     // "A frame encapsulates one or multiple blocks. Each block can be
@@ -543,7 +556,6 @@ static inline void zstdgpu_ShaderEntry_ParseFrames(ZSTDGPU_PARAM_INOUT(zstdgpu_P
                 const uint32_t cmpBlockCount = WaveActiveSum(frameInfo.cmpBlockStart);
                 const uint32_t rrBlockByteCount = WaveActiveSum(frameInfo.rrBlockBytesStart);
 
-                const uint32_t uncompSize = (uint32_t)WaveActiveSum(frameInfo.uncompSize);
                 const uint32_t frameCount = WaveActiveCountBits(true);
 
                 if (WaveIsFirstLane())
@@ -552,7 +564,6 @@ static inline void zstdgpu_ShaderEntry_ParseFrames(ZSTDGPU_PARAM_INOUT(zstdgpu_P
                     InterlockedAdd(srt.inoutCounters[0].Blocks_CMP, cmpBlockCount);
                     InterlockedAdd(srt.inoutCounters[0].BlocksBytes_RR, rrBlockByteCount);
                     InterlockedAdd(srt.inoutCounters[0].Frames, frameCount);
-                    InterlockedAdd(srt.inoutCounters[0].Frames_UncompressedByteSize, uncompSize);
                 }
             }
         }
@@ -588,7 +599,6 @@ static void zstdgpu_ShaderEntry_InitResources(ZSTDGPU_PARAM_INOUT(zstdgpu_InitRe
             srt.inoutCounters[0].Blocks_CMP                                  = 0;
             srt.inoutCounters[0].BlocksBytes_RR                              = 0;
             srt.inoutCounters[0].Frames                                      = 0;
-            srt.inoutCounters[0].Frames_UncompressedByteSize                 = 0;
             srt.inoutCounters[0].Frames_ExecuteSequences                     = 0;
         }
         return;

@@ -316,9 +316,8 @@ typedef struct zstdgpu_Counters
     uint32_t Blocks_RR;
     uint32_t Blocks_CMP;
     uint32_t BlocksBytes_RR;
-    uint32_t Frames;
-    uint32_t Frames_UncompressedByteSize;
-    uint32_t Frames_ExecuteSequences;
+    uint32_t Frames;                    // could instead pass in via root-constants
+    uint32_t Frames_ExecuteSequences;   // developer only
 } zstdgpu_Counters;
 
 static const uint32_t kzstdgpu_DispatchSlot_FseHufW                      = 0;

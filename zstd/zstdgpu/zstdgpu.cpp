@@ -131,7 +131,8 @@ static inline void zstdgpu_ParseFrame(zstdgpu_FrameInfo *outFrameInfo,
     }
 
     const uint32_t singleSegmentFlag = zstdgpu_BitFieldExtractU32(descriptor, 5, 1);
-    //
+
+    uint64_t windowSize = 0;
     if (0 == singleSegmentFlag)
     {
         const uint32_t windowDescriptor = zstdgpu_Forward_BitBuffer_Get(bits, 8);
@@ -149,7 +150,7 @@ static inline void zstdgpu_ParseFrame(zstdgpu_FrameInfo *outFrameInfo,
         // https://github.com/facebook/zstd/blob/dev/doc/zstd_compression_format.md#window_descriptor
         const uint64_t windowBase = 1ull << (10 + exponent);
         const uint64_t windowAdd = (windowBase / 8) * mantissa;
-        outFrameInfo->windowSize = windowBase + windowAdd;
+        windowSize = windowBase + windowAdd;
     }
 
     const uint32_t dictionaryIdFlag = zstdgpu_BitFieldExtractU32(descriptor, 0, 2);
@@ -162,7 +163,9 @@ static inline void zstdgpu_ParseFrame(zstdgpu_FrameInfo *outFrameInfo,
         const uint32_t byteCount[] = { 0u, 1u, 2u, 4u };
         const uint32_t bitCount = byteCount[dictionaryIdFlag] * 8u;
 
-        outFrameInfo->dictionary = zstdgpu_Forward_BitBuffer_Get(bits, bitCount);
+        const uint32_t dictionary = zstdgpu_Forward_BitBuffer_Get(bits, bitCount);
+        ZSTDGPU_ASSERT(dictionary == 0);
+        (void)dictionary;
     }
 
     const uint32_t frameContentSizeFlag = zstdgpu_BitFieldExtractU32(descriptor, 6, 2);
@@ -202,8 +205,9 @@ static inline void zstdgpu_ParseFrame(zstdgpu_FrameInfo *outFrameInfo,
         // Single_Segment_flag is set. In this case, the maximum back-reference
         // distance is the content size itself, which can be any value from 1 to
         // 2^64-1 bytes (16 EB)."
-        outFrameInfo->windowSize = outFrameInfo->uncompSize;
+        windowSize = outFrameInfo->uncompSize;
     }
+    (void)windowSize;
 
     //
     // "A frame encapsulates one or multiple blocks. Each block can be
@@ -453,18 +457,14 @@ void zstdgpu_CollectFrames(zstdgpu_OffsetAndSize *outFrames, zstdgpu_FrameInfo *
             outFrameInfos[frameId].cmpBlockStart      = frameInfo.cmpBlockStart;
             outFrameInfos[frameId].rrBlockBytesStart = frameInfo.rrBlockBytesStart;
 
-            frameInfo.windowSize        = 0;
             frameInfo.uncompSize        = 0;
-            frameInfo.dictionary        = 0;
             frameInfo.rrBlockStart      = 0;
             frameInfo.cmpBlockStart     = 0;
             frameInfo.rrBlockBytesStart = 0;
             zstdgpu_ParseFrame(&frameInfo, NULL, NULL, NULL, bits);
 
             // store just retrieved data
-            outFrameInfos[frameId].windowSize = frameInfo.windowSize;
             outFrameInfos[frameId].uncompSize = frameInfo.uncompSize;
-            outFrameInfos[frameId].dictionary = frameInfo.dictionary;
 
             byteOfs = zstdgpu_Forward_BitBuffer_GetByteOffset(bits);
             outFrames[frameId].size = byteOfs - outFrames[frameId].offs;
