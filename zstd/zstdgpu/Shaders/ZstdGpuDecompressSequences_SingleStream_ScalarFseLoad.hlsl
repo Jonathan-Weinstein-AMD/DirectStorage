@@ -1,9 +1,9 @@
 /**
- * ZstdGpuDecompressSequences_SingleStream_ScalarFseLoad64.hlsl
+ * ZstdGpuDecompressSequences_SingleStream_ScalarFseLoad32.hlsl
  *
  * A variant of the compute shader decompressessing FSE-compressed sequences
  * without pre-caching FSE tables into LDS, reading directly from the buffer.
- * Targets hardware with maximal supported wave size of 64 lanes.
+ * Targets hardware with maximal supported wave size of 32 lanes.
  *
  * Copyright (c) Microsoft. All rights reserved.
  * This code is licensed under the MIT License (MIT).
@@ -17,5 +17,5 @@
  */
 
 #define kzstdgpu_DecompressSequences_SingleStream_NoLdsFseCache 1
-#define kzstdgpu_TgSizeX_DecompressSequences_SingleStream 64
+#define kzstdgpu_TgSizeX_DecompressSequences_SingleStream 1
 #include "ZstdGpuDecompressSequences_SingleStream.hlsli"
