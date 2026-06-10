@@ -34,8 +34,10 @@ void main(uint groupId : SV_GroupId, uint i : SV_GroupThreadId)
     #include "../zstdgpu_srt_decl_undef.h"
 
 #if SINGLE_WAVE
+    const uint32_t waveSizeIfSingle = MAX_COPY_SIZE;
     const uint32_t frameIdx = groupId;
 #else
+    const uint32_t waveSizeIfSingle = 0;
     uint32_t frameIdx = 0;
     if (WaveIsFirstLane())
     {
@@ -44,5 +46,5 @@ void main(uint groupId : SV_GroupId, uint i : SV_GroupThreadId)
     frameIdx = WaveReadLaneFirst(frameIdx);
 #endif
 
-    zstdgpu_ShaderEntry_ExecuteSequences(srt, frameIdx);
+    zstdgpu_ShaderEntry_ExecuteSequences(srt, frameIdx, waveSizeIfSingle);
 }

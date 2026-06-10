@@ -4101,16 +4101,41 @@ static void zstdgpu_ExecuteSequences_Lit(ZSTDGPU_PARAM_INOUT(zstdgpu_ExecuteSequ
                                          uint32_t dstOfs,
                                          uint32_t dstEnd,
                                          uint32_t seqIdx,
-                                         uint32_t seqEnd)
+                                         uint32_t seqEnd,
+                                         uint32_t waveSizeIfSingle)
 {
-    // NOTE(pamartis): LOOP is used to make sure validation layer doesn't complain about accessing `inDecompressedSequence*`
-    ZSTDGPU_LOOP for (; seqIdx < seqEnd; ++seqIdx)
+    if (waveSizeIfSingle != 0) // constant
     {
-        // NOTE(pamartis): these are still uniform variables HLSL has no way of enforcing....
-        zstdgpu_Sequence seq = zstdgpu_LoadSequence(srt, seqIdx);
+        const uint32_t laneId = WaveGetLaneIndex();
+        ZSTDGPU_LOOP for (uint32_t r = seqIdx; r < seqEnd; r += waveSizeIfSingle)
+        {
+            const uint32_t v_coord = zstdgpu_MinU32(r + laneId, seqEnd - 1);
+            const uint32_t v_mlen = srt.inDecompressedSequenceMLen[v_coord];
+            const uint32_t v_llen = srt.inDecompressedSequenceLLen[v_coord];
+            const uint32_t v_offs = srt.inDecompressedSequenceOffs[v_coord];
 
-        zstdgpu_MemCpy_DstSrc(srt.inoutUnCompressedFramesData, dstOfs, litBuf, litOfs, seq.llen, dstEnd);
-        zstdgpu_MatchCopy(srt.inoutUnCompressedFramesData, dstOfs, seq, dstEnd);
+            const uint32_t innerCount = zstdgpu_MinU32(waveSizeIfSingle, seqEnd - r);
+            for (uint32_t j = 0; j < innerCount; ++j)
+            {
+                zstdgpu_Sequence seq;
+                seq.mlen = WaveReadLaneAt(v_mlen, j);
+                seq.llen = WaveReadLaneAt(v_llen, j);
+                seq.offs = WaveReadLaneAt(v_offs, j);
+
+                zstdgpu_MemCpy_DstSrc(srt.inoutUnCompressedFramesData, dstOfs, litBuf, litOfs, seq.llen, dstEnd);
+                zstdgpu_MatchCopy(srt.inoutUnCompressedFramesData, dstOfs, seq, dstEnd);
+            }
+        }
+    }
+    else // original
+    {
+        ZSTDGPU_LOOP for (; seqIdx < seqEnd; ++seqIdx)
+        {
+            zstdgpu_Sequence seq = zstdgpu_LoadSequence(srt, seqIdx);
+
+            zstdgpu_MemCpy_DstSrc(srt.inoutUnCompressedFramesData, dstOfs, litBuf, litOfs, seq.llen, dstEnd);
+            zstdgpu_MatchCopy(srt.inoutUnCompressedFramesData, dstOfs, seq, dstEnd);
+        }
     }
 
     // NOTE(pamartis): copy remaining literals. If there's no sequences, we copy the entire literal block.
@@ -4118,7 +4143,7 @@ static void zstdgpu_ExecuteSequences_Lit(ZSTDGPU_PARAM_INOUT(zstdgpu_ExecuteSequ
     zstdgpu_MemCpy_DstSrc(srt.inoutUnCompressedFramesData, dstOfs, litBuf, litOfs, litEnd - litOfs, dstEnd);
 }
 
-static void zstdgpu_ShaderEntry_ExecuteSequences(ZSTDGPU_PARAM_INOUT(zstdgpu_ExecuteSequences_SRT) srt, uint32_t frameIdx)
+static void zstdgpu_ShaderEntry_ExecuteSequences(ZSTDGPU_PARAM_INOUT(zstdgpu_ExecuteSequences_SRT) srt, uint32_t frameIdx, uint32_t waveSizeIfSingle)
 {
 #if SINGLE_WAVE
     #define COUNTERS srt.inCounters_RO_Counters[0]
@@ -4202,11 +4227,11 @@ static void zstdgpu_ShaderEntry_ExecuteSequences(ZSTDGPU_PARAM_INOUT(zstdgpu_Exe
 
         if (zstdgpu_CheckLitOffsetTypeCmp(litType))
         {
-            zstdgpu_ExecuteSequences_Lit(srt, srt.inDecompressedLiterals, litOffs, litOffs + litSize, blockByteBeg, blockByteEnd, seqOfs, seqEnd);
+            zstdgpu_ExecuteSequences_Lit(srt, srt.inDecompressedLiterals, litOffs, litOffs + litSize, blockByteBeg, blockByteEnd, seqOfs, seqEnd, waveSizeIfSingle);
         }
         else if (zstdgpu_CheckLitOffsetTypeRaw(litType))
         {
-            zstdgpu_ExecuteSequences_Lit(srt, srt.inCompressedData, litOffs, litOffs + litSize, blockByteBeg, blockByteEnd, seqOfs, seqEnd);
+            zstdgpu_ExecuteSequences_Lit(srt, srt.inCompressedData, litOffs, litOffs + litSize, blockByteBeg, blockByteEnd, seqOfs, seqEnd, waveSizeIfSingle);
         }
         else if (zstdgpu_CheckLitOffsetTypeRle(litType))
         {
