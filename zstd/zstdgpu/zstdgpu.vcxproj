@@ -268,16 +268,14 @@
   <Target Name="CollectShaders">
     <ItemGroup>
       <Shader Include="$(MSBuildThisFileDirectory)Shaders\*.hlsl">
-        <ShaderModel>cs_6_0</ShaderModel>
-        <Opts>
-        </Opts>
+        <ShaderModel>cs_6_2</ShaderModel>
+        <Opts>-enable-16bit-types</Opts>
       </Shader>
     </ItemGroup>
     <ItemGroup>
       <Shader Include="$(MSBuildThisFileDirectory)Shaders\*.cs_6_6">
         <ShaderModel>cs_6_6</ShaderModel>
-        <Opts>
-        </Opts>
+        <Opts>-enable-16bit-types</Opts>
       </Shader>
     </ItemGroup>
     <Message Text="%(Shader.FullPath)" />

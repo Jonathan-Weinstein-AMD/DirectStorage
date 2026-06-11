@@ -3973,22 +3973,47 @@ static zstdgpu_Sequence zstdgpu_LoadSequence(ZSTDGPU_PARAM_INOUT(zstdgpu_Execute
     return seq;
 }
 
+#ifdef __cplusplus
+typedef unsigned uint;
+#define groupshared static
+#endif
+
+// Max 32 groups per CU, each CU has 64 KiB LDS.
+// HLSL doesn't have uint8_t.
+typedef uint32_t LDS_ELEMENT_TYPE; /// XXX: debug with 32-bit, then try u16
+// typedef uint16_t LDS_ELEMENT_TYPE;
+static const uint32_t LDS_ELEMENT_COUNT = 2048 / sizeof(LDS_ELEMENT_TYPE);
+static const uint32_t LDS_ELEMENT_MASK  = LDS_ELEMENT_COUNT - 1;
+groupshared LDS_ELEMENT_TYPE g_lds[LDS_ELEMENT_COUNT];
+
+#define LDS_READ_EN 1 // perf17 drop passes with this set to 0
+
+static void StoreToLds(uint32_t v_lds_pos, uint32_t src)
+{
+    g_lds[v_lds_pos & LDS_ELEMENT_MASK] = LDS_ELEMENT_TYPE(src);
+}
+
 static void zstdgpu_MemSet(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dstData,
                            ZSTDGPU_PARAM_INOUT(uint32_t) dstOfs,
                            uint32_t srcSym,
                            uint32_t srcCnt,
-                           uint32_t dstEnd //< NOTE(pamartis): this one is passed for safety clamp, could be ignored
-                           )
+                           uint32_t dstEnd, //< NOTE(pamartis): this one is passed for safety clamp, could be ignored
+                           ZSTDGPU_PARAM_INOUT(uint32_t) s_lds_pos0)
 {
-    uint32_t dstI = dstOfs + WaveGetLaneIndex();
+    const uint32_t waveSize = WaveGetLaneCount();
+    const uint32_t laneId = WaveGetLaneIndex();
+    uint32_t dstI = dstOfs + laneId;
 
     dstOfs += srcCnt;
     dstEnd = zstdgpu_MinU32(dstEnd, dstOfs);
 
-    ZSTDGPU_LOOP for (; dstI < dstEnd; dstI += WaveGetLaneCount())
+    uint v_lds_pos = s_lds_pos0 + laneId;
+    ZSTDGPU_LOOP for (; dstI < dstEnd; dstI += waveSize, v_lds_pos += waveSize)
     {
         zstdgpu_TypedStoreU8(dstData, dstI, srcSym);
+        StoreToLds(v_lds_pos, srcSym);
     }
+    s_lds_pos0 += srcCnt; // (jweinste): no clamp
 }
 
 static void zstdgpu_MemCpy_DstSrc(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dstData,
@@ -3996,27 +4021,33 @@ static void zstdgpu_MemCpy_DstSrc(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dst
                                   ZSTDGPU_RO_TYPED_BUFFER(uint32_t, uint8_t) srcData,
                                   ZSTDGPU_PARAM_INOUT(uint32_t) srcOfs,
                                   uint32_t srcCnt,
-                                  uint32_t dstEnd //< NOTE(pamartis): this one is passed for safety clamp, could be ignored
-                                  )
+                                  uint32_t dstEnd, //< NOTE(pamartis): this one is passed for safety clamp, could be ignored
+                           ZSTDGPU_PARAM_INOUT(uint32_t) s_lds_pos0)
 {
-    uint32_t dstI = dstOfs + WaveGetLaneIndex();
-    uint32_t srcI = srcOfs + WaveGetLaneIndex();
+    const uint32_t waveSize = WaveGetLaneCount();
+    const uint32_t laneId = WaveGetLaneIndex();
+    uint32_t dstI = dstOfs + laneId;
+    uint32_t srcI = srcOfs + laneId;
 
     dstOfs += srcCnt;
     srcOfs += srcCnt;
     dstEnd = zstdgpu_MinU32(dstEnd, dstOfs);
 
-    ZSTDGPU_LOOP for (; dstI < dstEnd; dstI += WaveGetLaneCount(), srcI += WaveGetLaneCount())
+    uint v_lds_pos = s_lds_pos0 + laneId;
+    ZSTDGPU_LOOP for (; dstI < dstEnd; dstI += waveSize, srcI += waveSize, v_lds_pos += waveSize)
     {
-        zstdgpu_TypedStoreU8(dstData, dstI, srcData[srcI]);
+        const uint32_t srcSym = srcData[srcI];
+        zstdgpu_TypedStoreU8(dstData, dstI, srcSym);
+        StoreToLds(v_lds_pos, srcSym);
     }
+    s_lds_pos0 += srcCnt; // (jweinste): no clamp
 }
 
 static void zstdgpu_MatchCopy(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dstData,
                               ZSTDGPU_PARAM_INOUT(uint32_t) dstOfs,
                               zstdgpu_Sequence seq,
-                              uint32_t dstEnd  //< NOTE(pamartis): this one is passed for safety clamp, could be ignored
-                              )
+                              uint32_t dstEnd, //< NOTE(pamartis): this one is passed for safety clamp, could be ignored
+                              ZSTDGPU_PARAM_INOUT(uint32_t) s_lds_pos0)
 {
     const uint32_t laneCount = WaveGetLaneCount();
     const uint32_t laneId = WaveGetLaneIndex();
@@ -4026,19 +4057,41 @@ static void zstdgpu_MatchCopy(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dstData
     {
         uint32_t dstI = dstOfs + laneId;
         dstOfs += seq.mlen;
+        const uint32_t copyLen = zstdgpu_MinU32(dstEnd - dstOfs, seq.mlen); //< NOTE(pamartis): could skip min
         dstEnd = zstdgpu_MinU32(dstEnd, dstOfs); //< NOTE(pamartis): could skip min
 
-        ZSTDGPU_LOOP for (; dstI < dstEnd; dstI += laneCount)
+        if (LDS_READ_EN && zstdgpu_MinU32(s_lds_pos0, LDS_ELEMENT_COUNT) > seq.offs) // should be scalar
         {
-            zstdgpu_TypedStoreU8(dstData, dstI, dstData[dstI - seq.offs]);
+            uint v_lds_pos = s_lds_pos0 + laneId;
+            ZSTDGPU_LOOP for (; dstI < dstEnd; dstI += laneCount, v_lds_pos += laneCount)
+            {
+                const uint32_t srcSym = g_lds[(v_lds_pos - seq.offs) & LDS_ELEMENT_MASK];
+                zstdgpu_TypedStoreU8(dstData, dstI, srcSym);
+                StoreToLds(v_lds_pos, srcSym);
+            }
         }
+        else
+        {
+            uint v_lds_pos = s_lds_pos0 + laneId;
+            ZSTDGPU_LOOP for (; dstI < dstEnd; dstI += laneCount, v_lds_pos += laneCount)
+            {
+                const uint32_t srcSym = dstData[dstI - seq.offs];
+                zstdgpu_TypedStoreU8(dstData, dstI, srcSym);
+                StoreToLds(v_lds_pos, srcSym);
+            }
+        }
+        s_lds_pos0 += copyLen;
     }
     else // 'seq.offs < seq.mlen && seq.offs < laneCount':
     {
+        uint32_t v_lds_pos = s_lds_pos0 + laneId;
         uint32_t srcSym = 0;
         ZSTDGPU_BRANCH if (laneId < seq.offs)
         {
-            srcSym = dstData[dstOfs + laneId - seq.offs];
+            if (LDS_READ_EN && zstdgpu_MinU32(s_lds_pos0, LDS_ELEMENT_COUNT) > seq.offs) // should be scalar
+                srcSym = g_lds[(v_lds_pos - seq.offs) & LDS_ELEMENT_MASK];
+            else
+                srcSym = dstData[dstOfs + laneId - seq.offs];
         }
 
         const uint32_t copyLen = zstdgpu_MinU32(dstEnd - dstOfs, seq.mlen); //< NOTE(pamartis): could skip min
@@ -4055,7 +4108,7 @@ static void zstdgpu_MatchCopy(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dstData
         //          Store 0: stores ABCA = swizzle(ABC, {0,1,2,0}).
         //          Store 1: stores BCAB = swizzle(ABC, {1,2,0,1}).
         //          Store 2: only lane 0 can be active for the store, but the element it wants (C) is in lane 2.
-        for (uint32_t copyId = laneId; /* mid-break in the loop */; copyId += laneCount)
+        for (uint32_t copyId = laneId; /* mid-break in the loop */; copyId += laneCount, v_lds_pos += laneCount)
         {
             //< NOTE(pamartis): We could replace 'mod' operation by Lemire'19 approach and precomputing up to 128 constants..
             const uint32_t swizzled = WaveReadLaneAt(srcSym, copyId % seq.offs);
@@ -4065,8 +4118,10 @@ static void zstdgpu_MatchCopy(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dstData
                 break;
             }
             zstdgpu_TypedStoreU8(dstData, dstOfs + copyId, swizzled);
+            StoreToLds(v_lds_pos, swizzled);
         }
         dstOfs += copyLen;
+        s_lds_pos0 += copyLen;
     }
 }
 
@@ -4102,7 +4157,8 @@ static void zstdgpu_ExecuteSequences_Lit(ZSTDGPU_PARAM_INOUT(zstdgpu_ExecuteSequ
                                          uint32_t dstEnd,
                                          uint32_t seqIdx,
                                          uint32_t seqEnd,
-                                         uint32_t waveSizeIfSingle)
+                                         uint32_t waveSizeIfSingle,
+                                         ZSTDGPU_PARAM_INOUT(uint32_t) s_lds_pos0)
 {
     if (waveSizeIfSingle != 0) // constant
     {
@@ -4122,8 +4178,8 @@ static void zstdgpu_ExecuteSequences_Lit(ZSTDGPU_PARAM_INOUT(zstdgpu_ExecuteSequ
                 seq.llen = WaveReadLaneAt(v_llen, j);
                 seq.offs = WaveReadLaneAt(v_offs, j);
 
-                zstdgpu_MemCpy_DstSrc(srt.inoutUnCompressedFramesData, dstOfs, litBuf, litOfs, seq.llen, dstEnd);
-                zstdgpu_MatchCopy(srt.inoutUnCompressedFramesData, dstOfs, seq, dstEnd);
+                zstdgpu_MemCpy_DstSrc(srt.inoutUnCompressedFramesData, dstOfs, litBuf, litOfs, seq.llen, dstEnd, s_lds_pos0);
+                zstdgpu_MatchCopy(srt.inoutUnCompressedFramesData, dstOfs, seq, dstEnd, s_lds_pos0);
             }
         }
     }
@@ -4133,14 +4189,14 @@ static void zstdgpu_ExecuteSequences_Lit(ZSTDGPU_PARAM_INOUT(zstdgpu_ExecuteSequ
         {
             zstdgpu_Sequence seq = zstdgpu_LoadSequence(srt, seqIdx);
 
-            zstdgpu_MemCpy_DstSrc(srt.inoutUnCompressedFramesData, dstOfs, litBuf, litOfs, seq.llen, dstEnd);
-            zstdgpu_MatchCopy(srt.inoutUnCompressedFramesData, dstOfs, seq, dstEnd);
+            zstdgpu_MemCpy_DstSrc(srt.inoutUnCompressedFramesData, dstOfs, litBuf, litOfs, seq.llen, dstEnd, s_lds_pos0);
+            zstdgpu_MatchCopy(srt.inoutUnCompressedFramesData, dstOfs, seq, dstEnd, s_lds_pos0);
         }
     }
 
     // NOTE(pamartis): copy remaining literals. If there's no sequences, we copy the entire literal block.
     ZSTDGPU_ASSERT(litEnd - litOfs == dstEnd - dstOfs);
-    zstdgpu_MemCpy_DstSrc(srt.inoutUnCompressedFramesData, dstOfs, litBuf, litOfs, litEnd - litOfs, dstEnd);
+    zstdgpu_MemCpy_DstSrc(srt.inoutUnCompressedFramesData, dstOfs, litBuf, litOfs, litEnd - litOfs, dstEnd, s_lds_pos0);
 }
 
 static void zstdgpu_ShaderEntry_ExecuteSequences(ZSTDGPU_PARAM_INOUT(zstdgpu_ExecuteSequences_SRT) srt, uint32_t frameIdx, uint32_t waveSizeIfSingle)
@@ -4175,9 +4231,16 @@ static void zstdgpu_ShaderEntry_ExecuteSequences(ZSTDGPU_PARAM_INOUT(zstdgpu_Exe
 
     const zstdgpu_OffsetAndSize dstFrameOffsAndSize = srt.inUnCompressedFramesRefs[frameIdx];
 
+    uint32_t lastGlobalBlockIdx = uint32_t(-2); // can't be "right" for all frames, so make it "wrong" for all
+    uint32_t s_lds_pos0 = 0;
     for (uint32_t cmpBlockIdx = cmpBlockBeg; cmpBlockIdx < cmpBlockEnd; ++cmpBlockIdx)
     {
         const uint32_t blockIdx = srt.inGlobalBlockIndexPerCmpBlock[cmpBlockIdx];
+        if (lastGlobalBlockIdx + 1 != blockIdx)
+        {
+            s_lds_pos0 = 0; // A match_copy can source data from a Raw/RLE block.
+        }
+        lastGlobalBlockIdx = blockIdx;
 
         uint32_t blockOfs = 0;
         // NOTE(pamartis): Without `ZSTDGPU_BRANCH`, there's out-of-bounds `ZstdInBlockSizePrefix` access detected by validation layer when
@@ -4227,14 +4290,17 @@ static void zstdgpu_ShaderEntry_ExecuteSequences(ZSTDGPU_PARAM_INOUT(zstdgpu_Exe
 
         if (zstdgpu_CheckLitOffsetTypeCmp(litType))
         {
-            zstdgpu_ExecuteSequences_Lit(srt, srt.inDecompressedLiterals, litOffs, litOffs + litSize, blockByteBeg, blockByteEnd, seqOfs, seqEnd, waveSizeIfSingle);
+#if 0 // some inputs dont have RLE lits, less sp3 to look through
+            zstdgpu_ExecuteSequences_Lit(srt, srt.inDecompressedLiterals, litOffs, litOffs + litSize, blockByteBeg, blockByteEnd, seqOfs, seqEnd, waveSizeIfSingle, s_lds_pos0);
+#endif
         }
         else if (zstdgpu_CheckLitOffsetTypeRaw(litType))
         {
-            zstdgpu_ExecuteSequences_Lit(srt, srt.inCompressedData, litOffs, litOffs + litSize, blockByteBeg, blockByteEnd, seqOfs, seqEnd, waveSizeIfSingle);
+            zstdgpu_ExecuteSequences_Lit(srt, srt.inCompressedData, litOffs, litOffs + litSize, blockByteBeg, blockByteEnd, seqOfs, seqEnd, waveSizeIfSingle, s_lds_pos0);
         }
         else if (zstdgpu_CheckLitOffsetTypeRle(litType))
         {
+#if 0 // some inputs dont have RLE lits, less sp3 to look through
             // NOTE(pamartis): RLE literals contain actual symbol instead of offset, so we set the offsets to zero.
             const uint32_t symbol = litOffs;
             uint32_t blockByteCur = blockByteBeg;
@@ -4246,16 +4312,17 @@ static void zstdgpu_ShaderEntry_ExecuteSequences(ZSTDGPU_PARAM_INOUT(zstdgpu_Exe
                 // NOTE(pamartis): these are still uniform variables HLSL has no way of enforcing....
                 zstdgpu_Sequence seq = zstdgpu_LoadSequence(srt, seqIdx);
 
-                zstdgpu_MemSet(srt.inoutUnCompressedFramesData, blockByteCur, symbol, seq.llen, blockByteEnd);
+                zstdgpu_MemSet(srt.inoutUnCompressedFramesData, blockByteCur, symbol, seq.llen, blockByteEnd, s_lds_pos0);
                 litCur += seq.llen;
-                zstdgpu_MatchCopy(srt.inoutUnCompressedFramesData, blockByteCur, seq, blockByteEnd);
+                zstdgpu_MatchCopy(srt.inoutUnCompressedFramesData, blockByteCur, seq, blockByteEnd, s_lds_pos0);
             }
 
             // NOTE(pamartis): copy remaining literals. If above condtion `seqStreamIdx == ~0u` is true,
             // it means meaning there's no sequences, we copy the entire literal block.
             ZSTDGPU_ASSERT(litSize - litCur == blockByteEnd - blockByteCur);
 
-            zstdgpu_MemSet(srt.inoutUnCompressedFramesData, blockByteCur, symbol, litSize - litCur, blockByteEnd);
+            zstdgpu_MemSet(srt.inoutUnCompressedFramesData, blockByteCur, symbol, litSize - litCur, blockByteEnd, s_lds_pos0);
+#endif
         }
 #endif
 
