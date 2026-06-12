@@ -1023,10 +1023,24 @@ ZSTDGPU_ENUM(Status) zstdgpu_CreatePersistentContext(zstdgpu_PersistentContext *
 
         if (desc.VendorId == 0x1002) // AMD
         {
-            ZSTDGPU_KERNEL_MAP(DecompressLiterals, DecompressLiterals_LdsStoreCache64_16);
+            if (featureOptions1.WaveLaneCountMin <= 32)
+            {
+                ZSTDGPU_KERNEL_MAP(DecompressLiterals, DecompressLiterals_LdsStoreCache32_16);
+            }
+            else
+            {
+                ZSTDGPU_KERNEL_MAP(DecompressLiterals, DecompressLiterals_LdsStoreCache64_16);
+            }
             context->DecompressLiterals_LdsStoreCache_StreamsPerGroup = 16;
+
+#if 0 // after working around compiler issue, try this:
+            ZSTDGPU_KERNEL_MAP(DecompressSequences, DecompressSequences_MultiStream_16_LdsOutCache_32);
+            context->DecompressSequences_StreamsPerGroup = 16;
+#else
             ZSTDGPU_KERNEL_MAP(DecompressSequences, DecompressSequences_SingleStream_ScalarFseLoad);
             context->DecompressSequences_StreamsPerGroup = 1;
+#endif
+
             ZSTDGPU_KERNEL_MAP(ExecuteSequences, ExecuteSequences64);
         }
         else if (desc.VendorId == 0x10de)
