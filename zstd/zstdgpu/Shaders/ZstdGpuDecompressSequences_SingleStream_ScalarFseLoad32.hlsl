@@ -18,4 +18,7 @@
 
 #define kzstdgpu_DecompressSequences_SingleStream_NoLdsFseCache 1
 #define kzstdgpu_TgSizeX_DecompressSequences_SingleStream 32
+#define USE_LDS_FOR_EXTRA_BITS 1
+groupshared uint32_t LdsExtraBitsLLen[36];
+groupshared uint32_t LdsExtraBitsMLen[53];
 #include "ZstdGpuDecompressSequences_SingleStream.hlsli"

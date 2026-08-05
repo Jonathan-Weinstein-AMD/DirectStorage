@@ -71,8 +71,6 @@
 #include "ZstdGpuDecompressSequences_SingleStream_LdsFseCache128.h"
 #include "ZstdGpuDecompressSequences_SingleStream_LdsFseCache64.h"
 #include "ZstdGpuDecompressSequences_SingleStream_LdsFseCache32.h"
-#include "ZstdGpuDecompressSequences_SingleStream_ScalarFseLoad128.h"
-#include "ZstdGpuDecompressSequences_SingleStream_ScalarFseLoad64.h"
 #include "ZstdGpuDecompressSequences_SingleStream_ScalarFseLoad32.h"
 #include "ZstdGpuExecuteSequences128.h"
 #include "ZstdGpuExecuteSequences64.h"
@@ -728,8 +726,6 @@ static void zstdgpu_ReCreate_SRTs(zstdgpu_SRTs & srts, ID3D12Device *device, con
     ZSTDGPU_KERNEL(DecompressSequences_SingleStream_LdsFseCache128  ,   L"Decompress Sequences (Single-Stream, LDS FSE Cache, TG Size=128)")    \
     ZSTDGPU_KERNEL(DecompressSequences_SingleStream_LdsFseCache64   ,   L"Decompress Sequences (Single-Stream, LDS FSE Cache, TG Size= 64)")    \
     ZSTDGPU_KERNEL(DecompressSequences_SingleStream_LdsFseCache32   ,   L"Decompress Sequences (Single-Stream, LDS FSE Cache, TG Size= 32)")    \
-    ZSTDGPU_KERNEL(DecompressSequences_SingleStream_ScalarFseLoad128,   L"Decompress Sequences (Single-Stream, Scalar FSE Load, TG Size=128)")  \
-    ZSTDGPU_KERNEL(DecompressSequences_SingleStream_ScalarFseLoad64 ,   L"Decompress Sequences (Single-Stream, Scalar FSE Load, TG Size= 64)")  \
     ZSTDGPU_KERNEL(DecompressSequences_SingleStream_ScalarFseLoad32 ,   L"Decompress Sequences (Single-Stream, Scalar FSE Load, TG Size= 32)")  \
     ZSTDGPU_KERNEL(DecompressSequences_MultiStream_4                ,   L"Decompress Sequences (Multi-Stream, Streams= 4)")                     \
     ZSTDGPU_KERNEL(DecompressSequences_MultiStream_8                ,   L"Decompress Sequences (Multi-Stream, Streams= 8)")                     \
@@ -1064,12 +1060,17 @@ ZSTDGPU_ENUM(Status) zstdgpu_CreatePersistentContext(zstdgpu_PersistentContext *
         D3D12AID_CHECK(adapter->GetDesc(&desc));
         D3D12AID_SAFE_RELEASE(adapter);
 
-        if (desc.VendorId == 0x1002)
+        if (desc.VendorId == 0x1002) // AMD
         {
-            ZSTDGPU_KERNEL_MAP(DecompressLiterals, DecompressLiterals_LdsStoreCache64_16);
+            ZSTDGPU_KERNEL_MAP(DecompressLiterals, DecompressLiterals_LdsStoreCache64_16); // 32_16 is maybe minor improvement
             context->DecompressLiterals_LdsStoreCache_StreamsPerGroup = 16;
+#if 1
             ZSTDGPU_KERNEL_MAP(DecompressSequences, DecompressSequences_SingleStream_ScalarFseLoad32);
             context->DecompressSequences_StreamsPerGroup = 1;
+#else
+            ZSTDGPU_KERNEL_MAP(DecompressSequences, DecompressSequences_MultiStream_8);
+            context->DecompressSequences_StreamsPerGroup = 8;
+#endif
             ZSTDGPU_KERNEL_MAP(ExecuteSequences, ExecuteSequences64);
         }
         else if (desc.VendorId == 0x10de)
