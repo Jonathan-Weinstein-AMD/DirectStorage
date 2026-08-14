@@ -30,5 +30,8 @@ void main(uint groupId : SV_GroupId, uint i : SV_GroupThreadId)
     ZSTDGPU_EXECUTE_SEQUENCES_SRT()
     #include "../zstdgpu_srt_decl_undef.h"
 
+    const uint32_t waveSize = WaveGetLaneCount();
+    srt.vgprOverlappingMatchCopyReplicateLengths = waveSize - (waveSize % (WaveGetLaneIndex() + 1));
+
     zstdgpu_ShaderEntry_ExecuteSequences(srt);
 }

@@ -1924,6 +1924,8 @@ typedef struct zstdgpu_ComputeDestBlockOffsets_SRT
 typedef struct zstdgpu_ExecuteSequences_SRT
 {
     ZSTDGPU_EXECUTE_SEQUENCES_SRT();
+    // Optimization to replace a modulo per overlapping match copy with one modulo per frame:
+    uint32_t vgprOverlappingMatchCopyReplicateLengths;
 } zstdgpu_ExecuteSequences_SRT;
 
 typedef struct zstdgpu_ComputeDestSequenceOffsets_SRT

@@ -3880,8 +3880,8 @@ static void zstdgpu_MemCpy_DstSrc(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dst
 static void zstdgpu_MatchCopy(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dstData,
                               ZSTDGPU_PARAM_INOUT(uint32_t) dstOfs,
                               zstdgpu_Sequence seq,
-                              uint32_t dstEnd  //< NOTE(pamartis): this one is passed for safety clamp, could be ignored
-                              )
+                              uint32_t dstEnd,  //< NOTE(pamartis): this one is passed for safety clamp, could be ignored
+                              uint32_t vgprOverlappingMatchCopyReplicateLengths)
 {
     const uint32_t laneCount = WaveGetLaneCount();
     const uint32_t laneId = WaveGetLaneIndex();
@@ -3900,37 +3900,39 @@ static void zstdgpu_MatchCopy(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dstData
     }
     else // 'seq.offs < seq.mlen && seq.offs < laneCount':
     {
-        uint32_t srcSym = 0;
-        ZSTDGPU_BRANCH if (laneId < seq.offs)
-        {
-            srcSym = dstData[dstOfs + laneId - seq.offs];
-        }
+        // The method here is to replicate bundles of seq.offs bytes across a VGPR,
+        // then store from that VGPR using however many complete bundles there are
+        // (the number of _bytes_ across the amount of complete bundles is WaveSize - (WaveSize % seq.offs)).
+        //
+        // Example:
+        //      dst="wxyz", offs=3, mlen=17, wavesize=16
+        //                    0123456789abcdef
+        //      srcReplicated=xyzxyzxyzxyzxyzx  # replicatedLength = 15
+        //                                   ^ last value in lane not used
+        //      The loop iterates two times, the first iteration stores 15 bytes, and the second two bytes.
+        //
+        // For large mlen, the loop may iterate more than a method that attempts full-wave stores via
+        // LDS or WaveReadLaneAt with a nonuniform lane index. The LDS version of that can have high bank
+        // conflict degree, and latter version may need an extra modulo to avoid reading from inactive lanes.
+
+
+        // Ensure all lanes are active when reading from vgprOverlappingMatchCopyReplicateLengths:
+        const uint32_t replicatedLength = WaveReadLaneAt(vgprOverlappingMatchCopyReplicateLengths, seq.offs - 1);
+        // This load may have more active lanes than needed:
+        const uint32_t srcReplicated = dstData[dstOfs - seq.offs + (laneId % seq.offs)];
 
         const uint32_t copyLen = zstdgpu_MinU32(dstEnd - dstOfs, seq.mlen); //< NOTE(pamartis): could skip min
 
-        // NOTE(jweinste): It is undefined what is returned upon reading from an inactive lane via WaveReadLaneAt()
-        // (most current drivers seem to yield 0 for this case).
-        // Hence, we must place the loop exit/break carefully.
-        //
-        // Consider this example:
-        //      "ABC", offs=3, mlen=9 // initial data
-        //      "ABCABCABCABC"        // expected output
-        //
-        //      Say WaveSize = 4:
-        //          Store 0: stores ABCA = swizzle(ABC, {0,1,2,0}).
-        //          Store 1: stores BCAB = swizzle(ABC, {1,2,0,1}).
-        //          Store 2: only lane 0 can be active for the store, but the element it wants (C) is in lane 2.
-        for (uint32_t copyId = laneId; /* mid-break in the loop */; copyId += laneCount)
+        // This check is purely to avoid overlapping stores, which could be weird,
+        // although they'd still be correct for any completion order:
+        if (laneId < replicatedLength)
         {
-            //< NOTE(pamartis): We could replace 'mod' operation by Lemire'19 approach and precomputing up to 128 constants..
-            const uint32_t swizzled = WaveReadLaneAt(srcSym, copyId % seq.offs);
-            // Deactivate lanes only after doing WaveReadLaneAt.
-            if (copyId >= copyLen)
+            for (uint32_t copyId = laneId; copyId < copyLen; copyId += replicatedLength)
             {
-                break;
+                zstdgpu_TypedStoreU8(dstData, dstOfs + copyId, srcReplicated);
             }
-            zstdgpu_TypedStoreU8(dstData, dstOfs + copyId, swizzled);
         }
+
         dstOfs += copyLen;
     }
 }
@@ -3975,7 +3977,8 @@ static void zstdgpu_ExecuteSequences_Lit(ZSTDGPU_PARAM_INOUT(zstdgpu_ExecuteSequ
         zstdgpu_Sequence seq = zstdgpu_LoadSequence(srt, seqIdx);
 
         zstdgpu_MemCpy_DstSrc(srt.inoutUnCompressedFramesData, dstOfs, litBuf, litOfs, seq.llen, dstEnd);
-        zstdgpu_MatchCopy(srt.inoutUnCompressedFramesData, dstOfs, seq, dstEnd);
+        zstdgpu_MatchCopy(srt.inoutUnCompressedFramesData, dstOfs, seq, dstEnd,
+                          srt.vgprOverlappingMatchCopyReplicateLengths);
     }
 
     // NOTE(pamartis): copy remaining literals. If there's no sequences, we copy the entire literal block.
@@ -4078,7 +4081,8 @@ static void zstdgpu_ShaderEntry_ExecuteSequences(ZSTDGPU_PARAM_INOUT(zstdgpu_Exe
 
                 zstdgpu_MemSet(srt.inoutUnCompressedFramesData, blockByteCur, symbol, seq.llen, blockByteEnd);
                 litCur += seq.llen;
-                zstdgpu_MatchCopy(srt.inoutUnCompressedFramesData, blockByteCur, seq, blockByteEnd);
+                zstdgpu_MatchCopy(srt.inoutUnCompressedFramesData, blockByteCur, seq, blockByteEnd,
+                                  srt.vgprOverlappingMatchCopyReplicateLengths);
             }
 
             // NOTE(pamartis): copy remaining literals. If above condtion `seqStreamIdx == ~0u` is true,
