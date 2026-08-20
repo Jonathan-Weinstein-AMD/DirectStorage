@@ -1787,15 +1787,6 @@ static inline uint32_t zstdgpu_InitResources_GetDispatchSizeX(uint32_t initResou
     ZSTDGPU_RW_TYPED_BUFFER_DECL(uint32_t, uint8_t              , UnCompressedFramesData        , 0)    \
     ZSTDGPU_RW_BUFFER_DECL(zstdgpu_Counters                     , Counters                      , 1)
 
-#define ZSTDGPU_COMPUTE_DEST_SEQUENCE_OFFSETS_SRT()                                                     \
-    ZSTDGPU_RO_BUFFER_DECL(zstdgpu_Counters                     , Counters                      , 0)    \
-    ZSTDGPU_RO_BUFFER_DECL(uint32_t                             , BlockDestOffs                 , 1)    \
-    ZSTDGPU_RO_BUFFER_DECL(uint32_t                             , DecompressedSequenceMLen      , 2)    \
-    ZSTDGPU_RO_BUFFER_DECL(uint32_t                             , PerSeqStreamSeqStart          , 3)    \
-    ZSTDGPU_RO_BUFFER_DECL(uint32_t                             , SeqStreamToBlockId            , 4)    \
-    \
-    ZSTDGPU_RW_BUFFER_DECL(uint32_t                             , DestSequenceOffsets           , 0)
-
 #define ZSTDGPU_MEMSET_MEMCPY_SRT()                                                                     \
     ZSTDGPU_RO_BUFFER_DECL(zstdgpu_Counters                     , Counters                      , 0)    \
     ZSTDGPU_RO_BUFFER_DECL(uint32_t                             , CompressedData                , 1)    \
@@ -1823,8 +1814,7 @@ static inline uint32_t zstdgpu_InitResources_GetDispatchSizeX(uint32_t initResou
     ZSTDGPU_SRT(FinaliseSequenceOffsets                 , ZSTDGPU_FINALISE_SEQUENCE_OFFSETS_SRT())                  \
     ZSTDGPU_SRT(ComputeDestBlockOffsets                 , ZSTDGPU_COMPUTE_DEST_BLOCK_OFFSETS_SRT())                 \
     ZSTDGPU_SRT(MemsetMemcpy                            , ZSTDGPU_MEMSET_MEMCPY_SRT())                              \
-    ZSTDGPU_SRT(ExecuteSequences                        , ZSTDGPU_EXECUTE_SEQUENCES_SRT())                          \
-    ZSTDGPU_SRT(ComputeDestSequenceOffsets              , ZSTDGPU_COMPUTE_DEST_SEQUENCE_OFFSETS_SRT())
+    ZSTDGPU_SRT(ExecuteSequences                        , ZSTDGPU_EXECUTE_SEQUENCES_SRT())
 
 #define ZSTDGPU_SRT_LIST()                                                                                          \
     ZSTDGPU_SRT_LIST_STAGE0()                                                                                       \
@@ -1927,11 +1917,6 @@ typedef struct zstdgpu_ExecuteSequences_SRT
     // Optimization to replace a modulo per overlapping match copy with one modulo per frame:
     uint32_t vgprOverlappingMatchCopyReplicateLengths;
 } zstdgpu_ExecuteSequences_SRT;
-
-typedef struct zstdgpu_ComputeDestSequenceOffsets_SRT
-{
-    ZSTDGPU_COMPUTE_DEST_SEQUENCE_OFFSETS_SRT();
-} zstdgpu_ComputeDestSequenceOffsets_SRT;
 
 #include "zstdgpu_srt_decl_undef.h"
 
