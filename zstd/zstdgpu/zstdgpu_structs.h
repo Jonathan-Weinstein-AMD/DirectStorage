@@ -17,6 +17,21 @@
 #ifndef ZSTDGPU_STRUCTS_H
 #define ZSTDGPU_STRUCTS_H
 
+#define DEREF(uav, coord) uav[(coord)]
+/*
+
+srt.inout([A-Za-z0-9_]*)\[(.*)\] =
+DEREF(srt.inout$1, $2) =
+
+Interlocked(.*)\(([A-Za-z0-9\.]*)\[(.*)\]
+Interlocked$1(DEREF($2, $3)
+
+// Manually, array decls:
+([A-Za-z0-9_]*)\[(.*)\] =
+DEREF($1, $2) =
+
+*/
+
 #include "zstdgpu_shared_structs.h"
 
 #ifndef ZSTDGPU_UNUSED
