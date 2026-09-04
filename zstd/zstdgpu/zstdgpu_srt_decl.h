@@ -52,6 +52,7 @@ ZSTDGPU_SRT_BIND_GROUP_BEGIN(ParseFrames, Stage0|Stage1)
     ZSTDGPU_SRT_BUF_RW_STRUCT(uint32_t                      , PerFrameBlockCountRLE         )
     ZSTDGPU_SRT_BUF_RW_STRUCT(uint32_t                      , PerFrameBlockCountCMP         )
     ZSTDGPU_SRT_BUF_RW_STRUCT(uint32_t                      , PerFrameBlockCountAll         )
+    ZSTDGPU_SRT_BUF_RW_STRUCT(uint32_t                      , PerFrameSeqStreamMinIdx       )
     ZSTDGPU_SRT_BUF_RW_STRUCT(uint32_t                      , RawBlockSizePrefix            )
     ZSTDGPU_SRT_BUF_RW_STRUCT(uint32_t                      , RleBlockSizePrefix            )
 
@@ -405,10 +406,6 @@ ZSTDGPU_SRT_BEGIN(ParseCompressedBlocks, Indirect)
 
     ZSTDGPU_SRT_CONST_INLINE(uint32_t                       , compressedBlockCount          )
 ZSTDGPU_SRT_END()
-
-ZSTDGPU_SRT_PASS_BEGIN(Memset, SeqStreamMinIdx, Direct)
-    ZSTDGPU_SRT_BIND(Dest, PerFrameSeqStreamMinIdx)
-ZSTDGPU_SRT_PASS_END()
 
 ZSTDGPU_SRT_PASS_BEGIN(Memset, BlockCountRawLookback, Direct)
     ZSTDGPU_SRT_BIND(Dest, PerFrameBlockCountRAWLookback)

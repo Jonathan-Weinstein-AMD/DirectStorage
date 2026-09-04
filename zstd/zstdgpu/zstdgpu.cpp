@@ -2144,6 +2144,7 @@ ZSTDGPU_ENUM(Status) zstdgpu_SubmitAllStagesWithInteralMemory(zstdgpu_PerRequest
 
 #endif
 
+#if 0
 static void zstdgpu_Dispatch32Bit(ID3D12GraphicsCommandList *cmdList, uint32_t tgCount, uint32_t rootParameterIndex, uint32_t rootParameterOffset)
 {
 #ifdef _GAMING_XBOX
@@ -2168,6 +2169,7 @@ static void zstdgpu_Dispatch32Bit(ID3D12GraphicsCommandList *cmdList, uint32_t t
     cmdList->Dispatch(tgCountX, 1, 1);
 #endif
 }
+#endif
 
 #define zstdgpu_DispatchIndirect(cmdList, kernelName, counterName) \
     cmdList->ExecuteIndirect(req->kernelName##_CmdSig, kzstdgpu_DispatchSlot_CmdsPerSlot, req->resData.gpuOnly.DispatchArgs, kzstdgpu_DispatchSlot_##counterName * kzstdgpu_DispatchSlot_StrideInUInt32 * sizeof(uint32_t), req->resData.gpuOnly.DispatchCnts, kzstdgpu_DispatchSlot_##counterName * sizeof(uint32_t));
@@ -2224,9 +2226,6 @@ void zstdgpu_SubmitStage0(zstdgpu_PerRequestContext req, ID3D12GraphicsCommandLi
         const uint32_t tgCount = ZSTDGPU_TG_COUNT(lookbackCount, kzstdgpu_TgSizeX_Memset);
 
         PIXBeginEvent(cmdList, PIX_COLOR_DEFAULT, L"[InitResources :: Memset :: Stage 0]");
-
-        zstdgpu_Bind_Memset_SeqStreamMinIdx(cmdList, req->srts, req->resData.gpuOnly, /* tgOffset */0, /* workItemCount */req->zstdFrameCount, /* memset value */~0u);
-        cmdList->Dispatch(ZSTDGPU_TG_COUNT(req->zstdFrameCount, kzstdgpu_TgSizeX_Memset), 1, 1);
 
         zstdgpu_Bind_Memset_BlockCountRawLookback(cmdList, req->srts, req->resData.gpuOnly, /* tgOffset */0, /* workItemCount */lookbackCount, /* memset value */0);
         cmdList->Dispatch(tgCount, 1, 1);
@@ -2468,7 +2467,7 @@ void zstdgpu_SubmitStage1(zstdgpu_PerRequestContext req, ID3D12GraphicsCommandLi
         zstdgpu_DispatchIndirect(cmdList, Memset, Memset_CmpBlockLookback);
 
         // Group 4: HufWIdToHufLitId -- init to ~0 marking all potential Huffman table indices as unused. [Parse Compressed Blocks]
-        // would fill in this table with corresponding literal blocks.
+        // would fill in this table with corresponding literal blocks. NOTE: the write index in the shader is not cmpBlockIdx.
         zstdgpu_Bind_Memset_HufWIdToHufLitId(cmdList, req->srts, req->resData.gpuOnly, /* memset value */~0u);
         zstdgpu_DispatchIndirect(cmdList, Memset, Memset_CmpBlockCount);
 

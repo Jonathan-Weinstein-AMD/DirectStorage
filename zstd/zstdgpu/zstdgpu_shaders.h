@@ -567,6 +567,8 @@ static inline void zstdgpu_ShaderEntry_ParseFrames(ZSTDGPU_PARAM_INOUT(zstdgpu_P
 
             if (srt.countBlocksOnly > 0)
             {
+                DEREF(srt.inoutPerFrameSeqStreamMinIdx, threadId) = ~0u; // AMD
+
                 DEREF(srt.inoutPerFrameBlockCountRAW, threadId) = frameInfo.rawBlockStart;
                 DEREF(srt.inoutPerFrameBlockCountRLE, threadId) = frameInfo.rleBlockStart;
                 DEREF(srt.inoutPerFrameBlockCountCMP, threadId) = frameInfo.cmpBlockStart;
@@ -1004,8 +1006,8 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
     //
     const uint32_t literalBlockSzFmt = zstdgpu_Forward_BitBuffer_GetNoRefill(buffer, 2);
 
-    const uint32_t hufLitStreamCount = (literalBlockType >= 2u) ? ((0x0u == literalBlockSzFmt) ? 1u : 4u) : 0u;
     #ifdef __hlsl_dx_compiler
+        const uint32_t hufLitStreamCount = (literalBlockType >= 2u) ? ((0x0u == literalBlockSzFmt) ? 1u : 4u) : 0u;
         const uint32_t hufLitStreamStart = zstdgpu_OrderedAppendIndex(srt.inoutLitStreamCountPrefixLookback, hufLitStreamCount, threadId, kzstdgpu_TgSizeX_ParseCompressedBlocks);
     #else
         const uint32_t hufLitStreamStart = srt.inoutCounters[0].HUF_Streams;
@@ -1241,10 +1243,10 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
 
         if (1 == streamCount)
         {
-            srt.inoutLitRefs[hufLitStreamStart].src.offs = zstdgpu_Forward_BitBuffer_GetByteOffset(buffer);
-            srt.inoutLitRefs[hufLitStreamStart].src.size = compressedSize;
-            srt.inoutLitRefs[hufLitStreamStart].dst.offs = regeneratedOffset;
-            srt.inoutLitRefs[hufLitStreamStart].dst.size = regeneratedSize;
+            DEREF(srt.inoutLitRefs, hufLitStreamStart).src.offs = zstdgpu_Forward_BitBuffer_GetByteOffset(buffer);
+            DEREF(srt.inoutLitRefs, hufLitStreamStart).src.size = compressedSize;
+            DEREF(srt.inoutLitRefs, hufLitStreamStart).dst.offs = regeneratedOffset;
+            DEREF(srt.inoutLitRefs, hufLitStreamStart).dst.size = regeneratedSize;
             zstdgpu_Forward_BitBuffer_Skip(buffer, compressedSize);
         }
         else
@@ -1254,10 +1256,6 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
             const uint32_t litStream1Size = zstdgpu_Forward_BitBuffer_GetNoRefill(buffer, 16);
             const uint32_t litStream2Size = zstdgpu_Forward_BitBuffer_Get(buffer, 16);
 
-            srt.inoutLitRefs[hufLitStreamStart + 0].src.size = litStream0Size;
-            srt.inoutLitRefs[hufLitStreamStart + 1].src.size = litStream1Size;
-            srt.inoutLitRefs[hufLitStreamStart + 2].src.size = litStream2Size;
-
             compressedSize -= 6;
 
             const uint32_t compressedSize3Streams = litStream0Size
@@ -1266,32 +1264,35 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
 
             ZSTDGPU_ASSERT(compressedSize >= compressedSize3Streams);
             const uint32_t litStream3Size = compressedSize - compressedSize3Streams;
-            srt.inoutLitRefs[hufLitStreamStart + 3].src.size = litStream3Size;
 
             const uint32_t dstSize = (regeneratedSize + 3) / 4;
             uint32_t dstOffs = regeneratedOffset;
 
-            srt.inoutLitRefs[hufLitStreamStart + 0].src.offs = zstdgpu_Forward_BitBuffer_GetByteOffset(buffer);
-            srt.inoutLitRefs[hufLitStreamStart + 0].dst.offs = dstOffs;
-            srt.inoutLitRefs[hufLitStreamStart + 0].dst.size = dstSize;
+            DEREF(srt.inoutLitRefs, hufLitStreamStart + 0).src.offs = zstdgpu_Forward_BitBuffer_GetByteOffset(buffer);
+            DEREF(srt.inoutLitRefs, hufLitStreamStart + 0).src.size = litStream0Size;
+            DEREF(srt.inoutLitRefs, hufLitStreamStart + 0).dst.offs = dstOffs;
+            DEREF(srt.inoutLitRefs, hufLitStreamStart + 0).dst.size = dstSize;
             dstOffs += dstSize;
             zstdgpu_Forward_BitBuffer_Skip(buffer, litStream0Size);
 
-            srt.inoutLitRefs[hufLitStreamStart + 1].src.offs = zstdgpu_Forward_BitBuffer_GetByteOffset(buffer);
-            srt.inoutLitRefs[hufLitStreamStart + 1].dst.offs = dstOffs;
-            srt.inoutLitRefs[hufLitStreamStart + 1].dst.size = dstSize;
+            DEREF(srt.inoutLitRefs, hufLitStreamStart + 1).src.offs = zstdgpu_Forward_BitBuffer_GetByteOffset(buffer);
+            DEREF(srt.inoutLitRefs, hufLitStreamStart + 1).src.size = litStream1Size;
+            DEREF(srt.inoutLitRefs, hufLitStreamStart + 1).dst.offs = dstOffs;
+            DEREF(srt.inoutLitRefs, hufLitStreamStart + 1).dst.size = dstSize;
             dstOffs += dstSize;
             zstdgpu_Forward_BitBuffer_Skip(buffer, litStream1Size);
 
-            srt.inoutLitRefs[hufLitStreamStart + 2].src.offs = zstdgpu_Forward_BitBuffer_GetByteOffset(buffer);
-            srt.inoutLitRefs[hufLitStreamStart + 2].dst.offs = dstOffs;
-            srt.inoutLitRefs[hufLitStreamStart + 2].dst.size = dstSize;
+            DEREF(srt.inoutLitRefs, hufLitStreamStart + 2).src.offs = zstdgpu_Forward_BitBuffer_GetByteOffset(buffer);
+            DEREF(srt.inoutLitRefs, hufLitStreamStart + 2).src.size = litStream2Size;
+            DEREF(srt.inoutLitRefs, hufLitStreamStart + 2).dst.offs = dstOffs;
+            DEREF(srt.inoutLitRefs, hufLitStreamStart + 2).dst.size = dstSize;
             dstOffs += dstSize;
             zstdgpu_Forward_BitBuffer_Skip(buffer, litStream2Size);
 
-            srt.inoutLitRefs[hufLitStreamStart + 3].src.offs = zstdgpu_Forward_BitBuffer_GetByteOffset(buffer);
-            srt.inoutLitRefs[hufLitStreamStart + 3].dst.offs = dstOffs;
-            srt.inoutLitRefs[hufLitStreamStart + 3].dst.size = regeneratedSize - dstSize * 3;
+            DEREF(srt.inoutLitRefs, hufLitStreamStart + 3).src.offs = zstdgpu_Forward_BitBuffer_GetByteOffset(buffer);
+            DEREF(srt.inoutLitRefs, hufLitStreamStart + 3).src.size = litStream3Size;
+            DEREF(srt.inoutLitRefs, hufLitStreamStart + 3).dst.offs = dstOffs;
+            DEREF(srt.inoutLitRefs, hufLitStreamStart + 3).dst.size = regeneratedSize - dstSize * 3;
             zstdgpu_Forward_BitBuffer_Skip(buffer, litStream3Size);
         }
     }
@@ -1335,11 +1336,12 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
     //
     //  * (compacted across similar literal blocks with Huffman table)
     //
+
     ZSTDGPU_BRANCH if (isHufLit)
     {
-        srt.inoutHufWIdToHufLitId[fseTableIndexHufW]  = hufLitId;
-        srt.inoutHufLitIdToLitStreamId[hufLitId]      = outBlockData.litStreamIndex;
-        srt.inoutHufLitIdToHufWId_DBG[hufLitId]       = fseTableIndexHufW;
+        srt.inoutHufWIdToHufLitId[fseTableIndexHufW] = hufLitId;
+        srt.inoutHufLitIdToLitStreamId[hufLitId] = outBlockData.litStreamIndex;
+        srt.inoutHufLitIdToHufWId_DBG[hufLitId] = fseTableIndexHufW; // AMD: remove later
     }
 
     // `Sequences_Section_Header`
@@ -1467,7 +1469,7 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
         DEREF(srt.inoutSeqStreamToLLenFseId, outBlockData.seqStreamIndex) = fseTableIndexLLen;
         DEREF(srt.inoutSeqStreamToOffsFseId, outBlockData.seqStreamIndex) = fseTableIndexOffs;
         DEREF(srt.inoutSeqStreamToMLenFseId, outBlockData.seqStreamIndex) = fseTableIndexMLen;
-        srt.inoutSeqStreamToBlockId[outBlockData.seqStreamIndex]   = blockIndexInFrame;
+        DEREF(srt.inoutSeqStreamToBlockId, outBlockData.seqStreamIndex) = blockIndexInFrame;
     }
 
     DEREF(srt.inoutCompressedBlocks, threadId) = outBlockData;
@@ -4136,8 +4138,8 @@ static void zstdgpu_ExecuteSequences_Lit(ZSTDGPU_PARAM_INOUT(zstdgpu_ExecuteSequ
         // NOTE(pamartis): these are still uniform variables HLSL has no way of enforcing....
         zstdgpu_Sequence seq = zstdgpu_LoadSequence(srt, seqIdx);
 
-        // NOTE: Process 2 sequences at a time to optimize execution.  Execution is not VGPR limited. 
-        // Sequence k's match copy and k+1's literal copy are independent: different source buffers, non-overlapping destinations.        
+        // NOTE: Process 2 sequences at a time to optimize execution.  Execution is not VGPR limited.
+        // Sequence k's match copy and k+1's literal copy are independent: different source buffers, non-overlapping destinations.
         ZSTDGPU_LOOP for (; seqIdx + 1u < seqEnd; seqIdx += 2u)
         {
             const uint32_t nextSeqIdx = seqIdx + 1u;
