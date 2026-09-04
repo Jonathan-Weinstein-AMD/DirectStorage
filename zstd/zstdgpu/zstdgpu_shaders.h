@@ -630,7 +630,6 @@ static void zstdgpu_ShaderEntry_InitResources(ZSTDGPU_PARAM_INOUT(zstdgpu_InitRe
             srt.inoutCounters[0].BlocksBytes_RLE                             = 0;
             srt.inoutCounters[0].Frames                                      = 0;
             srt.inoutCounters[0].Frames_UncompressedByteSize                 = 0;
-            srt.inoutCounters[0].Frames_ExecuteSequences                     = 0;
         }
         return;
     }
@@ -3249,7 +3248,8 @@ static void zstdgpu_ReadSeqBitsAndDecompress(ZSTDGPU_PARAM_INOUT(zstdgpu_Backwar
                                              ZSTDGPU_PARAM_IN(uint32_t) symbolMLen,
                                              ZSTDGPU_PARAM_INOUT(uint32_t) outLLen,
                                              ZSTDGPU_PARAM_INOUT(uint32_t) outOffs,
-                                             ZSTDGPU_PARAM_INOUT(uint32_t) outMLen)
+                                             ZSTDGPU_PARAM_INOUT(uint32_t) outMLen,
+                                             bool skipOffsRefill)
 {
     // Extra bits are low 5 bits, rest are baseline.
     // It could be better/simpler to not bitpack (use uint32_t2), but the LLVM-SROA pass in DXC might split that up; a single load is desired.
@@ -3284,9 +3284,21 @@ static void zstdgpu_ReadSeqBitsAndDecompress(ZSTDGPU_PARAM_INOUT(zstdgpu_Backwar
     const uint32_t bitcntOffs = symbolOffs_Clamped;
     const uint32_t bitcntMLen = mlenInfo & 31;
 
-    const uint32_t bitsOffs = zstdgpu_Backward_BitBuffer_V0_Get(bitBuffer, bitcntOffs);
-    const uint32_t bitsMLen = zstdgpu_Backward_BitBuffer_V0_Get(bitBuffer, bitcntMLen);
-    const uint32_t bitsLLen = zstdgpu_Backward_BitBuffer_V0_Get(bitBuffer, bitcntLLen);
+    uint32_t bitsOffs;
+    if (skipOffsRefill)
+    {
+        bitsOffs = zstdgpu_Backward_BitBuffer_V0_GetNoRefill(bitBuffer, bitcntOffs);
+    }
+    else
+    {
+        bitsOffs = zstdgpu_Backward_BitBuffer_V0_Get(bitBuffer, bitcntOffs);
+    }
+
+    // MLen and LLen value extra bits are each <= 16 and can be read in a single packed Get()
+    // Offs can need up to 28 extra bits, so it must remain a separate read.
+    const uint32_t bitsMLenLLen = zstdgpu_Backward_BitBuffer_V0_Get(bitBuffer, bitcntMLen + bitcntLLen);
+    const uint32_t bitsLLen = bitsMLenLLen & ((1u << bitcntLLen) - 1u);
+    const uint32_t bitsMLen = bitsMLenLLen >> bitcntLLen;
 
     outOffs = (1u << symbolOffs_Clamped) + bitsOffs;
     outMLen = (mlenInfo >> 5) + bitsMLen;
@@ -3377,23 +3389,27 @@ static void zstdgpu_ShaderEntry_DecompressSequences_MultiStream(ZSTDGPU_PARAM_IN
         uint32_t stateOffs = ZSTDGPU_BACKWARD_BITBUF(GetNoRefill)(bitBuffer, initBitcntOffs);
         uint32_t stateMLen = ZSTDGPU_BACKWARD_BITBUF(GetNoRefill)(bitBuffer, initBitcntMLen);
 
-        for (uint32_t i = outputStart; i < outputEnd; ++i)
+        // Preload the first sequence's FSE elements and prepare the bit buffer for the initial reads.
+        uint32_t fseElemLLen = srt.inFseElems[stateLLen + startLLen];
+        uint32_t fseElemOffs = srt.inFseElems[stateOffs + startOffs];
+        uint32_t fseElemMLen = srt.inFseElems[stateMLen + startMLen];
+
+        if (!bitBuffer.hadlastrefill)
         {
-            stateLLen += startLLen;
-            stateOffs += startOffs;
-            stateMLen += startMLen;
+            ZSTDGPU_BACKWARD_BITBUF(Refill)(bitBuffer, 32u);
+        }
 
-            const uint32_t fseElemLLen = srt.inFseElems[stateLLen];
-            const uint32_t fseElemOffs = srt.inFseElems[stateOffs];
-            const uint32_t fseElemMLen = srt.inFseElems[stateMLen];
-
+        // Loop over all sequences (except the final one) while prefetching the subsequent one.
+        uint32_t i = outputStart;
+        for (; i + 1u < outputEnd; ++i)
+        {
             uint32_t llen = 0, offs = 0, mlen = 0;
             zstdgpu_ReadSeqBitsAndDecompress(
                 bitBuffer,
                 zstdgpu_FseElem_Symbol(fseElemLLen),
                 zstdgpu_FseElem_Symbol(fseElemOffs),
                 zstdgpu_FseElem_Symbol(fseElemMLen),
-                llen, offs, mlen
+                llen, offs, mlen, true
             );
             offs = zstdgpu_UpdatePreviousAndRecomputeIncoming(offset1, offset2, offset3, offs, llen);
 
@@ -3401,16 +3417,42 @@ static void zstdgpu_ShaderEntry_DecompressSequences_MultiStream(ZSTDGPU_PARAM_IN
             totalSize += llen + mlen;
             totalMLen += mlen;
 
+            // There is always a next sequence here: advance the states and prefetch the next symbol's
+            // FSE elements and bit-buffer refill to overlap with the scattered sequence stores below.
+            zstdgpu_ReadExtraBitsAndUpdateState(bitBuffer, fseElemLLen, fseElemOffs, fseElemMLen, stateLLen, stateOffs, stateMLen);
+            fseElemLLen = srt.inFseElems[stateLLen + startLLen];
+            fseElemOffs = srt.inFseElems[stateOffs + startOffs];
+            fseElemMLen = srt.inFseElems[stateMLen + startMLen];
+
+            if (!bitBuffer.hadlastrefill)
+            {
+                ZSTDGPU_BACKWARD_BITBUF(Refill)(bitBuffer, 32u);
+            }
+
             DEREF(srt.inoutDecompressedSequenceLLen, i) = llen;
             DEREF(srt.inoutDecompressedSequenceMLen, i) = mlen;
             DEREF(srt.inoutDecompressedSequenceOffs, i) = offs;
+        }
 
-            if (i == outputEnd - 1u)
-            {
-                break;
-            }
+        // Now handle the final (or only) sequence in the current block.
+        if (i < outputEnd)
+        {
+            uint32_t llen = 0, offs = 0, mlen = 0;
+            zstdgpu_ReadSeqBitsAndDecompress(
+                bitBuffer,
+                zstdgpu_FseElem_Symbol(fseElemLLen),
+                zstdgpu_FseElem_Symbol(fseElemOffs),
+                zstdgpu_FseElem_Symbol(fseElemMLen),
+                llen, offs, mlen, true
+            );
+            offs = zstdgpu_UpdatePreviousAndRecomputeIncoming(offset1, offset2, offset3, offs, llen);
 
-            zstdgpu_ReadExtraBitsAndUpdateState(bitBuffer, fseElemLLen, fseElemOffs, fseElemMLen, stateLLen, stateOffs, stateMLen);
+            totalSize += llen + mlen;
+            totalMLen += mlen;
+
+            DEREF(srt.inoutDecompressedSequenceLLen, i) = llen;
+            DEREF(srt.inoutDecompressedSequenceMLen, i) = mlen;
+            DEREF(srt.inoutDecompressedSequenceOffs, i) = offs;
         }
     }
 
@@ -3526,40 +3568,60 @@ static void zstdgpu_ShaderEntry_DecompressSequences_SingleStream(ZSTDGPU_PARAM_I
 
         uint32_t i         = dst.offs;
     const uint32_t outputEnd = dst.offs + dst.size;
+
+    // NOTE: The single-stream decoder runs the entire FSE recurrence on one thread,
+    // prefetching the next FSE elements before storing the current ones to overlap load latency.
+    #if !kzstdgpu_DecompressSequences_SingleStream_NoLdsFseCache
+    #   define ZSTDGPU_SS_FSE_LLEN(s) zstdgpu_LdsLoadU32(GS_FsePackedLLen + (s))
+    #   define ZSTDGPU_SS_FSE_OFFS(s) zstdgpu_LdsLoadU32(GS_FsePackedOffs + (s))
+    #   define ZSTDGPU_SS_FSE_MLEN(s) zstdgpu_LdsLoadU32(GS_FsePackedMLen + (s))
+    #else
+    #   define ZSTDGPU_SS_FSE_LLEN(s) srt.inFseElems[startLLen + (s)]
+    #   define ZSTDGPU_SS_FSE_OFFS(s) srt.inFseElems[startOffs + (s)]
+    #   define ZSTDGPU_SS_FSE_MLEN(s) srt.inFseElems[startMLen + (s)]
+    #endif
+
+    uint32_t packedFseElemLLen = ZSTDGPU_SS_FSE_LLEN(stateLLen);
+    uint32_t packedFseElemOffs = ZSTDGPU_SS_FSE_OFFS(stateOffs);
+    uint32_t packedFseElemMLen = ZSTDGPU_SS_FSE_MLEN(stateMLen);
+
     for (;;)
     {
-        #if !kzstdgpu_DecompressSequences_SingleStream_NoLdsFseCache
-            const uint32_t packedFseElemLLen = zstdgpu_LdsLoadU32(GS_FsePackedLLen + stateLLen);
-            const uint32_t packedFseElemOffs = zstdgpu_LdsLoadU32(GS_FsePackedOffs + stateOffs);
-            const uint32_t packedFseElemMLen = zstdgpu_LdsLoadU32(GS_FsePackedMLen + stateMLen);
-        #else
-            const uint32_t packedFseElemLLen = srt.inFseElems[startLLen + stateLLen];
-            const uint32_t packedFseElemOffs = srt.inFseElems[startOffs + stateOffs];
-            const uint32_t packedFseElemMLen = srt.inFseElems[startMLen + stateMLen];
-        #endif
-
         uint32_t llen = 0, offs = 0, mlen = 0;
         zstdgpu_ReadSeqBitsAndDecompress(bitBuffer,
             zstdgpu_FseElem_Symbol(packedFseElemLLen),
             zstdgpu_FseElem_Symbol(packedFseElemOffs),
             zstdgpu_FseElem_Symbol(packedFseElemMLen),
-            llen, offs, mlen);
+            llen, offs, mlen, false);
         offs = zstdgpu_UpdatePreviousAndRecomputeIncoming(offset1, offset2, offset3, offs, llen);
 
         /*totalSize += llen + mlen;*/
         totalMLen += mlen;
 
+        const bool isLastSeq = (i + 1u == outputEnd);
+
+        // Advance the states and prefetch the next symbol's FSE elements ahead of the stores below.
+        if (!isLastSeq)
+        {
+            zstdgpu_ReadExtraBitsAndUpdateState(bitBuffer, packedFseElemLLen, packedFseElemOffs, packedFseElemMLen, stateLLen, stateOffs, stateMLen);
+            packedFseElemLLen = ZSTDGPU_SS_FSE_LLEN(stateLLen);
+            packedFseElemOffs = ZSTDGPU_SS_FSE_OFFS(stateOffs);
+            packedFseElemMLen = ZSTDGPU_SS_FSE_MLEN(stateMLen);
+        }
+
         DEREF(srt.inoutDecompressedSequenceLLen, i) = llen;
         DEREF(srt.inoutDecompressedSequenceMLen, i) = mlen;
         DEREF(srt.inoutDecompressedSequenceOffs, i) = offs;
 
-        if (++i == outputEnd)
+        if (isLastSeq)
         {
             break;
         }
-
-        zstdgpu_ReadExtraBitsAndUpdateState(bitBuffer, packedFseElemLLen, packedFseElemOffs, packedFseElemMLen, stateLLen, stateOffs, stateMLen);
+        ++i;
     }
+    #undef ZSTDGPU_SS_FSE_LLEN
+    #undef ZSTDGPU_SS_FSE_OFFS
+    #undef ZSTDGPU_SS_FSE_MLEN
     ZSTDGPU_ASSERT(bitBuffer.hadlastrefill && bitBuffer.bitcnt == 0);
     #undef ZSTDGPU_BACKWARD_BITBUF
 
@@ -3706,7 +3768,7 @@ static void zstdgpu_ShaderEntry_DecompressSequences_MultiStream_LdsOutCache(ZSTD
                     zstdgpu_FseElem_Symbol(fseElemLLen),
                     zstdgpu_FseElem_Symbol(fseElemOffs),
                     zstdgpu_FseElem_Symbol(fseElemMLen),
-                    llen, offs, mlen
+                    llen, offs, mlen, false
                 );
                 offs = zstdgpu_UpdatePreviousAndRecomputeIncoming(offset1, offset2, offset3, offs, llen);
 
@@ -3935,6 +3997,107 @@ static void zstdgpu_MatchCopy(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dstData
     }
 }
 
+static void zstdgpu_ExecuteSequence_FusedCopy(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dstData,
+                                              ZSTDGPU_PARAM_INOUT(uint32_t) dstOfs,
+                                              ZSTDGPU_RO_TYPED_BUFFER(uint32_t, uint8_t) litBuf,
+                                              ZSTDGPU_PARAM_INOUT(uint32_t) litOfs,
+                                              zstdgpu_Sequence seq,
+                                              uint32_t dstEnd)
+{
+    const uint32_t laneId = WaveGetLaneIndex();
+    const uint32_t laneCount = WaveGetLaneCount();
+    const uint32_t total = seq.llen + seq.mlen;
+
+    // Fast path: fused literal and match copy when the sequence fits within the wave.
+    ZSTDGPU_BRANCH if (seq.offs >= total && total <= laneCount && dstOfs + total <= dstEnd)
+    {
+        ZSTDGPU_BRANCH if (laneId < total)
+        {
+            // Load both literal and match values unconditionally, then select based on laneId to keep control flow wave-uniform.
+            // Hot path is bound by dependent-store latency rather than loads.
+            const uint32_t litVal   = litBuf[litOfs + laneId];
+            const uint32_t matchVal = dstData[dstOfs + laneId - seq.offs];
+            const uint32_t value    = (laneId < seq.llen) ? litVal : matchVal;
+            zstdgpu_TypedStoreU8(dstData, dstOfs + laneId, value);
+        }
+        dstOfs += total;
+        litOfs += seq.llen;
+    }
+    else
+    {
+        // Fall back to separate literal and match copies when the fused copy conditions are not met.
+        zstdgpu_MemCpy_DstSrc(dstData, dstOfs, litBuf, litOfs, seq.llen, dstEnd);
+        zstdgpu_MatchCopy(dstData, dstOfs, seq, dstEnd);
+    }
+}
+
+static void zstdgpu_ExecuteSequencePair_FusedCopy(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dstData,
+                                                  ZSTDGPU_PARAM_INOUT(uint32_t) dstOfs,
+                                                  ZSTDGPU_RO_TYPED_BUFFER(uint32_t, uint8_t) litBuf,
+                                                  ZSTDGPU_PARAM_INOUT(uint32_t) litOfs,
+                                                  zstdgpu_Sequence seq0,
+                                                  zstdgpu_Sequence seq1,
+                                                  uint32_t dstEnd)
+{
+    const uint32_t laneId = WaveGetLaneIndex();
+    const uint32_t laneCount = WaveGetLaneCount();
+    const uint32_t total0 = seq0.llen + seq0.mlen;
+    const uint32_t total1 = seq1.llen + seq1.mlen;
+    const uint32_t combined = total0 + total1;
+
+    // NOTE: This function is a specialized version of zstdgpu_ExecuteSequence_FusedCopy that works on a pair of sequences
+
+    // Fast path: attempt to coalesce the two sequences into a single wave-cooperative store.
+    ZSTDGPU_BRANCH if (combined <= laneCount
+                       && seq0.offs >= total0
+                       && seq1.offs >= combined
+                       && dstOfs + combined <= dstEnd)
+    {
+        ZSTDGPU_BRANCH if (laneId < combined)
+        {
+            const bool     inSeq0 = laneId < total0;
+            const uint32_t local  = inSeq0 ? laneId : (laneId - total0);
+            const uint32_t llenL  = inSeq0 ? seq0.llen : seq1.llen;
+            const uint32_t litIdx   = inSeq0 ? (litOfs + laneId) : (litOfs + seq0.llen + local);
+            const uint32_t off      = inSeq0 ? seq0.offs : seq1.offs;
+            const uint32_t litVal   = litBuf[litIdx];
+            const uint32_t matchVal = dstData[dstOfs + laneId - off];
+            const uint32_t value    = (local < llenL) ? litVal : matchVal;
+            zstdgpu_TypedStoreU8(dstData, dstOfs + laneId, value);
+        }
+        dstOfs += combined;
+        litOfs += seq0.llen + seq1.llen;
+    }
+    // Second tier: attempt to coalesce the two sequences into a single wave-cooperative store when the combined span is up to twice the lane count.
+    else if (combined <= (laneCount << 1u)
+             && seq0.offs >= total0
+             && seq1.offs >= combined
+             && dstOfs + combined <= dstEnd)
+    {
+        ZSTDGPU_LOOP for (uint32_t b = laneId; b < combined; b += laneCount)
+        {
+            const bool     inSeq0 = b < total0;
+            const uint32_t local  = inSeq0 ? b : (b - total0);
+            const uint32_t llenL  = inSeq0 ? seq0.llen : seq1.llen;
+            const uint32_t litIdx = inSeq0 ? (litOfs + b) : (litOfs + seq0.llen + local);
+            const uint32_t off    = inSeq0 ? seq0.offs : seq1.offs;
+            const uint32_t litVal   = litBuf[litIdx];
+            const uint32_t matchVal = dstData[dstOfs + b - off];
+            const uint32_t value    = (local < llenL) ? litVal : matchVal;
+            zstdgpu_TypedStoreU8(dstData, dstOfs + b, value);
+        }
+        dstOfs += combined;
+        litOfs += seq0.llen + seq1.llen;
+    }
+    else
+    {
+        // Fallback to separate fused copies for each sequence. This path is taken when the combined
+        // sequence cannot be safely coalesced into a single wave-cooperative store.
+        zstdgpu_ExecuteSequence_FusedCopy(dstData, dstOfs, litBuf, litOfs, seq0, dstEnd);
+        zstdgpu_ExecuteSequence_FusedCopy(dstData, dstOfs, litBuf, litOfs, seq1, dstEnd);
+    }
+}
+
 /**
  *  NOTE(pamartis): This function exists solely to allow calling the same code and passing different 'litBuf'
  *                  from different condition:
@@ -3968,14 +4131,36 @@ static void zstdgpu_ExecuteSequences_Lit(ZSTDGPU_PARAM_INOUT(zstdgpu_ExecuteSequ
                                          uint32_t seqIdx,
                                          uint32_t seqEnd)
 {
-    // NOTE(pamartis): LOOP is used to make sure validation layer doesn't complain about accessing `inDecompressedSequence*`
-    ZSTDGPU_LOOP for (; seqIdx < seqEnd; ++seqIdx)
+    ZSTDGPU_BRANCH if (seqIdx < seqEnd)
     {
         // NOTE(pamartis): these are still uniform variables HLSL has no way of enforcing....
         zstdgpu_Sequence seq = zstdgpu_LoadSequence(srt, seqIdx);
 
-        zstdgpu_MemCpy_DstSrc(srt.inoutUnCompressedFramesData, dstOfs, litBuf, litOfs, seq.llen, dstEnd);
-        zstdgpu_MatchCopy(srt.inoutUnCompressedFramesData, dstOfs, seq, dstEnd);
+        // NOTE: Process 2 sequences at a time to optimize execution.  Execution is not VGPR limited. 
+        // Sequence k's match copy and k+1's literal copy are independent: different source buffers, non-overlapping destinations.        
+        ZSTDGPU_LOOP for (; seqIdx + 1u < seqEnd; seqIdx += 2u)
+        {
+            const uint32_t nextSeqIdx = seqIdx + 1u;
+            zstdgpu_Sequence seq1 = zstdgpu_LoadSequence(srt, nextSeqIdx);
+
+            // Prefetch the sequence after the pair so its metadata load hides behind the four copies below.
+            const uint32_t prefetchSeqIdx = seqIdx + 2u;
+            zstdgpu_Sequence seqNext = seq1;
+            ZSTDGPU_BRANCH if (prefetchSeqIdx < seqEnd)
+            {
+                seqNext = zstdgpu_LoadSequence(srt, prefetchSeqIdx);
+            }
+
+            zstdgpu_ExecuteSequencePair_FusedCopy(srt.inoutUnCompressedFramesData, dstOfs, litBuf, litOfs, seq, seq1, dstEnd);
+
+            seq = seqNext;
+        }
+
+        // Tail: handle the final sequence when the sequence count in this frame is odd.
+        ZSTDGPU_BRANCH if (seqIdx < seqEnd)
+        {
+            zstdgpu_ExecuteSequence_FusedCopy(srt.inoutUnCompressedFramesData, dstOfs, litBuf, litOfs, seq, dstEnd);
+        }
     }
 
     // NOTE(pamartis): copy remaining literals. If there's no sequences, we copy the entire literal block.
@@ -3983,18 +4168,14 @@ static void zstdgpu_ExecuteSequences_Lit(ZSTDGPU_PARAM_INOUT(zstdgpu_ExecuteSequ
     zstdgpu_MemCpy_DstSrc(srt.inoutUnCompressedFramesData, dstOfs, litBuf, litOfs, litEnd - litOfs, dstEnd);
 }
 
-static void zstdgpu_ShaderEntry_ExecuteSequences(ZSTDGPU_PARAM_INOUT(zstdgpu_ExecuteSequences_SRT) srt)
+static void zstdgpu_ShaderEntry_ExecuteSequences(ZSTDGPU_PARAM_INOUT(zstdgpu_ExecuteSequences_SRT) srt, uint32_t groupId)
 {
-    const uint32_t seqStreamCnt = srt.inoutCounters[0].Seq_Streams;
+    const uint32_t seqStreamCnt = srt.inCounters[0].Seq_Streams;
 
-    const uint32_t frameCnt = srt.inoutCounters[0].Frames;
+    const uint32_t frameCnt = srt.inCounters[0].Frames;
 
-    uint32_t frameIdx = 0;
-    if (WaveIsFirstLane())
-    {
-        InterlockedAdd(DEREF(srt.inoutCounters, 0).Frames_ExecuteSequences, 1, frameIdx);
-    }
-    frameIdx = WaveReadLaneFirst(frameIdx);
+    // NOTE: ExecuteSequences is dispatched with one threadgroup per frame so groupId is a unique frame index in [0, frameCount).
+    const uint32_t frameIdx = groupId;
 
     if (frameIdx >= frameCnt)
         return;
@@ -4002,7 +4183,7 @@ static void zstdgpu_ShaderEntry_ExecuteSequences(ZSTDGPU_PARAM_INOUT(zstdgpu_Exe
     const uint32_t cmpBlockBeg = srt.inPerFrameBlockCountCMP[frameIdx];
     const uint32_t cmpBlockEnd = (frameIdx + 1u < frameCnt)
                                ? srt.inPerFrameBlockCountCMP[frameIdx + 1u]
-                               : srt.inoutCounters[0].Blocks_CMP;
+                               : srt.inCounters[0].Blocks_CMP;
 
     for (uint32_t cmpBlockIdx = cmpBlockBeg; cmpBlockIdx < cmpBlockEnd; ++cmpBlockIdx)
     {
@@ -4043,7 +4224,7 @@ static void zstdgpu_ShaderEntry_ExecuteSequences(ZSTDGPU_PARAM_INOUT(zstdgpu_Exe
 
             ZSTDGPU_BRANCH if (seqStreamIdx + 1u == seqStreamCnt)
             {
-                seqEnd = srt.inoutCounters[0].Seq_Streams_DecodedItems;
+                seqEnd = srt.inCounters[0].Seq_Streams_DecodedItems;
             }
             else
             {
