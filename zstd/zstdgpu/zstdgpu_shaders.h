@@ -567,7 +567,7 @@ static inline void zstdgpu_ShaderEntry_ParseFrames(ZSTDGPU_PARAM_INOUT(zstdgpu_P
 
             if (srt.countBlocksOnly > 0)
             {
-                DEREF(srt.inoutPerFrameSeqStreamMinIdx, threadId) = ~0u; // AMD
+                DEREF(srt.inoutPerFrameSeqStreamMinIdx, threadId) = ~0u; // AMC
 
                 DEREF(srt.inoutPerFrameBlockCountRAW, threadId) = frameInfo.rawBlockStart;
                 DEREF(srt.inoutPerFrameBlockCountRLE, threadId) = frameInfo.rleBlockStart;
@@ -623,8 +623,6 @@ static void zstdgpu_ShaderEntry_InitResources(ZSTDGPU_PARAM_INOUT(zstdgpu_InitRe
             srt.inoutCounters[0].Seq_Streams                                 = 0;
             srt.inoutCounters[0].HUF_Streams                                 = 0;
             srt.inoutCounters[0].HufLit                                      = 0;
-            srt.inoutCounters[0].RAW_Streams                                 = 0;
-            srt.inoutCounters[0].RLE_Streams                                 = 0;
             srt.inoutCounters[0].Blocks_RAW                                  = 0;
             srt.inoutCounters[0].Blocks_RLE                                  = 0;
             srt.inoutCounters[0].Blocks_CMP                                  = 0;
@@ -1056,14 +1054,6 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
             outBlockData.literal.offs = zstdgpu_Forward_BitBuffer_Get(buffer, 8);
             outBlockData.literal.size = zstdgpu_EncodeRleLitTypeIntoLitSize(regeneratedSize);
         }
-
-        const uint32_t rawStreamCountPerWave = WaveActiveCountBits(literalBlockType == 0);
-        const uint32_t rleStreamCountPerWave = WaveActiveCountBits(literalBlockType == 1);
-        if (WaveIsFirstLane())
-        {
-            InterlockedAdd(DEREF(srt.inoutCounters, 0).RAW_Streams, rawStreamCountPerWave);
-            InterlockedAdd(DEREF(srt.inoutCounters, 0).RLE_Streams, rleStreamCountPerWave);
-        }
     }
     // ...
     //      - For `Compressed_Block` and `Treeless_Literals_Block`, it's required to decode both `Compressed_Size`
@@ -1339,9 +1329,9 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
 
     ZSTDGPU_BRANCH if (isHufLit)
     {
-        srt.inoutHufWIdToHufLitId[fseTableIndexHufW] = hufLitId;
-        srt.inoutHufLitIdToLitStreamId[hufLitId] = outBlockData.litStreamIndex;
-        srt.inoutHufLitIdToHufWId_DBG[hufLitId] = fseTableIndexHufW; // AMD: remove later
+        DEREF(srt.inoutHufWIdToHufLitId, fseTableIndexHufW) = hufLitId;
+        DEREF(srt.inoutHufLitIdToLitStreamId, hufLitId) = outBlockData.litStreamIndex;
+        DEREF(srt.inoutHufLitIdToHufWId_DBG, hufLitId) = fseTableIndexHufW; // AMC: remove later
     }
 
     // `Sequences_Section_Header`

@@ -316,8 +316,6 @@ typedef struct zstdgpu_Counters
     uint32_t Seq_Streams;
     uint32_t HUF_Streams;
     uint32_t HufLit;
-    uint32_t RAW_Streams;
-    uint32_t RLE_Streams;
     uint32_t Blocks_RAW;
     uint32_t Blocks_RLE;
     uint32_t Blocks_CMP;
