@@ -612,24 +612,16 @@ static void zstdgpu_ShaderEntry_InitResources(ZSTDGPU_PARAM_INOUT(zstdgpu_InitRe
         // FseLLen/Offs/MLen start at 1 because we always decode "Default" tables at index 0
         if (threadId == 0)
         {
-            srt.inoutCounters[0].FseHufW                                     = 0;
-            srt.inoutCounters[0].FseLLen                                     = 1;
-            srt.inoutCounters[0].FseOffs                                     = 1;
-            srt.inoutCounters[0].FseMLen                                     = 1;
-            srt.inoutCounters[0].DecompressLiteralsGroups                    = 0;
-            srt.inoutCounters[0].HUF_WgtStreams                              = 0;
-            srt.inoutCounters[0].Seq_Streams_DecodedItems                    = 0;
-            srt.inoutCounters[0].HUF_Streams_DecodedBytes                    = 0;
-            srt.inoutCounters[0].Seq_Streams                                 = 0;
-            srt.inoutCounters[0].HUF_Streams                                 = 0;
-            srt.inoutCounters[0].HufLit                                      = 0;
-            srt.inoutCounters[0].Blocks_RAW                                  = 0;
-            srt.inoutCounters[0].Blocks_RLE                                  = 0;
-            srt.inoutCounters[0].Blocks_CMP                                  = 0;
-            srt.inoutCounters[0].BlocksBytes_RAW                             = 0;
-            srt.inoutCounters[0].BlocksBytes_RLE                             = 0;
-            srt.inoutCounters[0].Frames                                      = 0;
-            srt.inoutCounters[0].Frames_UncompressedByteSize                 = 0;
+#if __hlsl_dx_compiler
+            zstdgpu_Counters c = (zstdgpu_Counters)0;
+#else
+            zstdgpu_Counters c = {};
+#endif
+            // FseHufW is left as 0
+            c.FseLLen = 1;
+            c.FseOffs = 1;
+            c.FseMLen = 1;
+            DEREF(srt.inoutCounters, 0) = c;
         }
         return;
     }
@@ -1440,8 +1432,8 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
         #undef ALLOCATE_FSE_TABLE_INDEX
 
         const uint32_t offs = zstdgpu_Forward_BitBuffer_GetByteOffset(buffer);
-        srt.inoutSeqStreamToRef[outBlockData.seqStreamIndex].offs = offs;
-        srt.inoutSeqStreamToRef[outBlockData.seqStreamIndex].size = buffer.datasz - offs;
+        DEREF(srt.inoutSeqStreamToRef, outBlockData.seqStreamIndex).offs = offs;
+        DEREF(srt.inoutSeqStreamToRef, outBlockData.seqStreamIndex).size = buffer.datasz - offs;
 
         // NOTE(pamartis): given the prefix sum (exclusive) of compressed block counts in each frame (srt.inPerFrameBlockCountCMP)
         // each threadId (compressed block index) does a binary search of its ZSTD frame index
