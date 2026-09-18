@@ -168,8 +168,6 @@ ZSTDGPU_SRT_END()
 ZSTDGPU_SRT_BEGIN(Memset, Indirect)
     ZSTDGPU_SRT_BUF_RW_STRUCT(uint32_t                      , Dest                          )
 
-    ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , DispatchArgs                  )
-
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , tgOffset                      )
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , workItemCount                 )
     ZSTDGPU_SRT_CONST(uint32_t                              , value                         )
@@ -180,8 +178,6 @@ ZSTDGPU_SRT_BEGIN(DecompressLiterals, Indirect)
     ZSTDGPU_SRT_USE_BIND_GROUP(HuffmanTable)
     ZSTDGPU_SRT_USE_BIND_GROUP(LiteralDwords)
 
-    ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , DispatchArgs                  )
-
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , tgOffset                      )
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , workItemCount                 )
 ZSTDGPU_SRT_END()
@@ -189,8 +185,6 @@ ZSTDGPU_SRT_END()
 ZSTDGPU_SRT_BEGIN(InitHuffmanTableAndDecompressLiterals, Indirect)
     ZSTDGPU_SRT_USE_BIND_GROUP(LiteralStreams)
     ZSTDGPU_SRT_USE_BIND_GROUP(HuffmanWeights)
-
-    ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , DispatchArgs                  )
 
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , tgOffset                      )
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , workItemCount                 )
@@ -200,8 +194,6 @@ ZSTDGPU_SRT_BEGIN(PrefixSum, Indirect)
     ZSTDGPU_SRT_BUF_RW_STRUCT(uint32_t                      , InCountsOutPrefix             )
     ZSTDGPU_SRT_BUF_RWGLC_STRUCT(uint32_t                   , InCountsOutPrefixLookback     )
 
-    ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , DispatchArgs                  )
-
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , tgOffset                      )
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , workItemCount                 )
     ZSTDGPU_SRT_CONST(uint32_t                              , outputInclusive               )
@@ -210,8 +202,6 @@ ZSTDGPU_SRT_END()
 ZSTDGPU_SRT_BEGIN(PropagateFseIndex, Indirect)
     ZSTDGPU_SRT_BUF_RW_STRUCT(uint32_t                      , FseIds                        )
     ZSTDGPU_SRT_BUF_RWGLC_STRUCT(uint32_t                   , FseIndexLookback              )
-
-    ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , DispatchArgs                  )
 
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , tgOffset                      )
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , workItemCount                 )
@@ -224,8 +214,6 @@ ZSTDGPU_SRT_BEGIN(ComputePrefixSum, Indirect)
     ZSTDGPU_SRT_BUF_RW_STRUCT(uint32_t                      , LitGroupEndPerHuffmanTable    )
     ZSTDGPU_SRT_BUF_RWGLC_STRUCT(uint32_t                   , LitGroupEndPerHuffmanTableLookback)
     ZSTDGPU_SRT_BUF_RW_STRUCT(zstdgpu_Counters              , Counters                      )
-
-    ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , DispatchArgs                  )
 
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , tgOffset                      )
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , workItemCount                 )
@@ -244,8 +232,6 @@ ZSTDGPU_SRT_BEGIN(PrefixSequenceOffsets, Indirect)
     ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , PerFrameBlockCountAll         )
     ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , SeqStreamToBlockId            )
     ZSTDGPU_SRT_BUF_RO_STRUCT(zstdgpu_Counters              , Counters                      )
-
-    ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , DispatchArgs                  )
 
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , tgOffset                      )
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , workItemCount                 )
@@ -277,8 +263,6 @@ ZSTDGPU_SRT_BEGIN(DecompressHuffmanWeights, Indirect)
     ZSTDGPU_SRT_BUF_RO_STRUCT(zstdgpu_FseInfo               , FseInfos                      )
     ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , FseElems                      )
 
-    ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , DispatchArgs                  )
-
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , tgOffset                      )
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , workItemCount                 )
 ZSTDGPU_SRT_END()
@@ -290,8 +274,6 @@ ZSTDGPU_SRT_BEGIN(DecodeHuffmanWeights, Indirect)
     ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , CompressedData                )
     ZSTDGPU_SRT_BUF_RO_STRUCT(zstdgpu_OffsetAndSize         , HufRefs                       )
 
-    ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , DispatchArgs                  )
-
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , tgOffset                      )
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , workItemCount                 )
     ZSTDGPU_SRT_CONST(uint32_t                              , compressedBufferSizeInBytes   )
@@ -302,8 +284,6 @@ ZSTDGPU_SRT_BEGIN(InitHuffmanTable, Indirect)
     ZSTDGPU_SRT_USE_BIND_GROUP(HuffmanTableWrite)
 
     ZSTDGPU_SRT_BUF_RO_STRUCT(zstdgpu_Counters              , Counters                      )
-
-    ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , DispatchArgs                  )
 
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , tgOffset                      )
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , workItemCount                 )
@@ -324,8 +304,6 @@ ZSTDGPU_SRT_BEGIN(DecompressSequences, Indirect)
     ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , PerSeqStreamSeqStart          )
     ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , FseElems                      )
 
-    ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , DispatchArgs                  )
-
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , tgOffset                      )
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , workItemCount                 )
 ZSTDGPU_SRT_END()
@@ -342,8 +320,6 @@ ZSTDGPU_SRT_BEGIN(FinaliseSequenceOffsets, Indirect)
     ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , PerFrameSeqStreamMinIdx       )
     ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , SeqStreamToBlockId            )
 
-    ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , DispatchArgs                  )
-
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , tgOffset                      )
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , workItemCount                 )
 ZSTDGPU_SRT_END()
@@ -355,8 +331,6 @@ ZSTDGPU_SRT_BEGIN(InitFseTable, Indirect)
 
     ZSTDGPU_SRT_BUF_RO_STRUCT(zstdgpu_FseInfo               , FseInfos                      )
     ZSTDGPU_SRT_BUF_RO_STRUCT(zstdgpu_Counters              , Counters                      )
-
-    ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , DispatchArgs                  )
 
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , tgOffset                      )
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , workItemCount                 )
@@ -373,8 +347,6 @@ ZSTDGPU_SRT_BEGIN(ComputeDestBlockOffsets, Indirect)
     ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , BlockSizePrefix               )
     ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , PerFrameBlockCountAll         )
     ZSTDGPU_SRT_BUF_RO_STRUCT(zstdgpu_OffsetAndSize         , UnCompressedFramesRefs        )
-
-    ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , DispatchArgs                  )
 
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , tgOffset                      )
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , workItemCount                 )
@@ -408,8 +380,6 @@ ZSTDGPU_SRT_BEGIN(MemsetMemcpy, Indirect)
     ZSTDGPU_SRT_BUF_RO_STRUCT(zstdgpu_OffsetAndSize         , BlocksRefsTyped               )
     ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , GlobalBlockIndexTyped         )
 
-    ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , DispatchArgs                  )
-
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , tgOffset                      )
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , workItemCount                 )
     ZSTDGPU_SRT_CONST(uint32_t                              , flags                         )
@@ -430,7 +400,6 @@ ZSTDGPU_SRT_BEGIN(ParseCompressedBlocks, Indirect)
     ZSTDGPU_SRT_BUF_RO_STRUCT(zstdgpu_OffsetAndSize         , BlocksCMPRefs                 )
     ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , PerFrameBlockCountCMP         )
     ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , GlobalBlockIndexPerCmpBlock   )
-
     ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , DispatchArgs                  )
 
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , tgOffset                      )
