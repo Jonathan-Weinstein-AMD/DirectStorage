@@ -89,8 +89,7 @@ enum
     kzstdgpu_SrtRes_DispatchCnts                        = 68,
     kzstdgpu_SrtRes_Predicate                           = 69,
     kzstdgpu_SrtRes_UnCompressedFramesRefs              = 70,
-    kzstdgpu_SrtRes_DestSequenceOffsets                 = 71,
-    kzstdgpu_SrtRes_Count                               = 72
+    kzstdgpu_SrtRes_Count                               = 71
 };
 
 /**
@@ -113,10 +112,9 @@ static const uint32_t kzstdgpu_SrtConstsRootSlot_DecompressSequences      = 11;
 static const uint32_t kzstdgpu_SrtConstsRootSlot_FinaliseSequenceOffsets  = 9;
 static const uint32_t kzstdgpu_SrtConstsRootSlot_InitFseTable             = 4;
 static const uint32_t kzstdgpu_SrtConstsRootSlot_ComputeDestBlockOffsets  = 4;
-static const uint32_t kzstdgpu_SrtConstsRootSlot_ComputeDestSequenceOffsets = 6;
 static const uint32_t kzstdgpu_SrtConstsRootSlot_MemsetMemcpy             = 7;
 static const uint32_t kzstdgpu_SrtConstsRootSlot_InitResources            = 2;
-static const uint32_t kzstdgpu_SrtConstsRootSlot_ParseCompressedBlocks    = 5;
+static const uint32_t kzstdgpu_SrtConstsRootSlot_ParseCompressedBlocks    = 6;
 
 /**
  * Descriptors each stage's bind groups occupy in the shader-visible heap.
@@ -180,7 +178,6 @@ struct zstdgpu_Srts
     d3d12aid_ComputeRsPs          InitFseTable;
     d3d12aid_ComputeRsPs          ComputeDestBlockOffsets;
     d3d12aid_ComputeRsPs          ExecuteSequences;
-    d3d12aid_ComputeRsPs          ComputeDestSequenceOffsets;
     d3d12aid_ComputeRsPs          MemsetMemcpy;
     d3d12aid_ComputeRsPs          InitResources;
     d3d12aid_ComputeRsPs          ParseCompressedBlocks;
@@ -903,7 +900,7 @@ static void zstdgpu_Bind_PrefixSequenceOffsets(ID3D12GraphicsCommandList *cmdLis
     cmdList->SetComputeRoot32BitConstant(10 /* Consts */, frameCount, 2 /* frameCount */);
 }
 
-static void zstdgpu_Bind_UpdateDispatchArgs(ID3D12GraphicsCommandList *cmdList, const zstdgpu_Srts &srts, const zstdgpu_GpuOnlyBuffers &b, uint32_t decompressSequences_StreamsPerTG, uint32_t stage, uint32_t cmpBlockCountMax, uint32_t rawBlockCountMax, uint32_t rleBlockCountMax, uint32_t litByteCountMax, uint32_t seqElemCountMax)
+static void zstdgpu_Bind_UpdateDispatchArgs(ID3D12GraphicsCommandList *cmdList, const zstdgpu_Srts &srts, const zstdgpu_GpuOnlyBuffers &b, uint32_t decompressSequences_StreamsPerTG, uint32_t stage, uint32_t cmpBlockCountMax, uint32_t rawBlockCountMax, uint32_t rleBlockCountMax, uint32_t litByteCountMax, uint32_t seqElemCountMax, uint32_t usePlainDispatchIndirect)
 {
     d3d12aid_ComputeRsPs_Set(&srts.UpdateDispatchArgs, cmdList);
     cmdList->SetComputeRootUnorderedAccessView(0 /* Counters */, b.Counters->GetGPUVirtualAddress());
@@ -917,6 +914,7 @@ static void zstdgpu_Bind_UpdateDispatchArgs(ID3D12GraphicsCommandList *cmdList, 
     cmdList->SetComputeRoot32BitConstant(4 /* Consts */, rleBlockCountMax, 4 /* rleBlockCountMax */);
     cmdList->SetComputeRoot32BitConstant(4 /* Consts */, litByteCountMax, 5 /* litByteCountMax */);
     cmdList->SetComputeRoot32BitConstant(4 /* Consts */, seqElemCountMax, 6 /* seqElemCountMax */);
+    cmdList->SetComputeRoot32BitConstant(4 /* Consts */, usePlainDispatchIndirect, 7 /* usePlainDispatchIndirect */);
 }
 
 static void zstdgpu_Bind_DecompressHuffmanWeights_Stage2(ID3D12GraphicsCommandList *cmdList, const zstdgpu_Srts &srts, const zstdgpu_GpuOnlyBuffers &b)
@@ -1049,8 +1047,9 @@ static void zstdgpu_Bind_ParseCompressedBlocks_Stage1(ID3D12GraphicsCommandList 
     cmdList->SetComputeRootShaderResourceView(2 /* BlocksCMPRefs */, b.BlocksCMPRefs->GetGPUVirtualAddress());
     cmdList->SetComputeRootShaderResourceView(3 /* PerFrameBlockCountCMP */, b.PerFrameBlockCountCMP->GetGPUVirtualAddress());
     cmdList->SetComputeRootShaderResourceView(4 /* GlobalBlockIndexPerCmpBlock */, b.GlobalBlockIndexPerCmpBlock->GetGPUVirtualAddress());
-    cmdList->SetComputeRoot32BitConstant(5 /* Consts */, compressedBufferSizeInBytes, 2 /* compressedBufferSizeInBytes */);
-    cmdList->SetComputeRoot32BitConstant(5 /* Consts */, frameCount, 3 /* frameCount */);
+    cmdList->SetComputeRootShaderResourceView(5 /* DispatchArgs */, b.DispatchArgs->GetGPUVirtualAddress());
+    cmdList->SetComputeRoot32BitConstant(6 /* Consts */, compressedBufferSizeInBytes, 2 /* compressedBufferSizeInBytes */);
+    cmdList->SetComputeRoot32BitConstant(6 /* Consts */, frameCount, 3 /* frameCount */);
 }
 
 #endif /* ZSTDGPU_SRT_GENERATED_BIND_H */

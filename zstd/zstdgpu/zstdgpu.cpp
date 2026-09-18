@@ -784,6 +784,7 @@ struct zstdgpu_PersistentContextImpl
     #undef ZSTDGPU_KERNEL
     uint32_t                DecompressLiterals_LdsStoreCache_StreamsPerGroup;
     uint32_t                DecompressSequences_StreamsPerGroup;
+    bool                    usePlainDispatchIndirect;
 };
 
 static const uint32_t kzstdgpu_SetupFlags_InputsCpuMemory       = (1u << 0);
@@ -808,6 +809,7 @@ struct zstdgpu_PerRequestContextImpl
 
     uint32_t                DecompressLiterals_LdsStoreCache_StreamsPerGroup;
     uint32_t                DecompressSequences_StreamsPerGroup;
+    bool                    usePlainDispatchIndirect;
 
     zstdgpu_Srts            srts;
     zstdgpu_ResourceDataGpu resData;
@@ -936,6 +938,8 @@ ZSTDGPU_ENUM(Status) zstdgpu_CreatePersistentContext(zstdgpu_PersistentContext *
         DXGI_ADAPTER_DESC desc;
         D3D12AID_CHECK(adapter->GetDesc(&desc));
         D3D12AID_SAFE_RELEASE(adapter);
+
+        context->usePlainDispatchIndirect = false; // TODO
 
         if (desc.VendorId == 0x1002)
         {
@@ -1075,6 +1079,7 @@ ZSTDGPU_ENUM(Status) zstdgpu_CreatePerRequestContext(zstdgpu_PerRequestContext *
         #undef ZSTDGPU_KERNEL
         context->DecompressLiterals_LdsStoreCache_StreamsPerGroup = persistentContext->DecompressLiterals_LdsStoreCache_StreamsPerGroup;
         context->DecompressSequences_StreamsPerGroup = persistentContext->DecompressSequences_StreamsPerGroup;
+        context->usePlainDispatchIndirect = persistentContext->usePlainDispatchIndirect;
 
         context->srts.heap = NULL;
         context->srts.heapOffset = 0;
@@ -2338,7 +2343,8 @@ void zstdgpu_SubmitStage0(zstdgpu_PerRequestContext req, ID3D12GraphicsCommandLi
             req->zstdRawBlockCountMax,
             req->zstdRleBlockCountMax,
             /* litByteCountMax, unused for stage 0 */0,
-            /* seqElemCountMax, unused for stage 0 */0
+            /* seqElemCountMax, unused for stage 0 */0,
+            req->usePlainDispatchIndirect
         );
         ZSTDGPU_KERNEL_SCOPE(UpdateDispatchArgs_Stage0, cmdList,
             cmdList->Dispatch(1, 1, 1);
@@ -2696,7 +2702,8 @@ void zstdgpu_SubmitStage1(zstdgpu_PerRequestContext req, ID3D12GraphicsCommandLi
             req->zstdRawBlockCountMax,
             req->zstdRleBlockCountMax,
             req->zstdUncompressedLitByteCountMax,
-            req->zstdUncompressedSeqElemCountMax
+            req->zstdUncompressedSeqElemCountMax,
+            req->usePlainDispatchIndirect
         );
         ZSTDGPU_KERNEL_SCOPE(UpdateDispatchArgs_Stage1, cmdList,
             cmdList->Dispatch(1, 1, 1);
@@ -2840,7 +2847,8 @@ void zstdgpu_SubmitStage2(zstdgpu_PerRequestContext req, ID3D12GraphicsCommandLi
             req->zstdRawBlockCountMax,
             req->zstdRleBlockCountMax,
             /* litByteCountMax, unused for stage == 2 */0,
-            /* seqElemCountMax, unused for stage == 2 */0
+            /* seqElemCountMax, unused for stage == 2 */0,
+            req->usePlainDispatchIndirect
         );
         ZSTDGPU_KERNEL_SCOPE(UpdateDispatchArgs_DecompressLiterals, cmdList,
             cmdList->Dispatch(1, 1, 1);

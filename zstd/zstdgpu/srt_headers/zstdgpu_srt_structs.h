@@ -138,6 +138,7 @@ typedef struct zstdgpu_UpdateDispatchArgs_SRT
     uint32_t                                                rleBlockCountMax;
     uint32_t                                                litByteCountMax;
     uint32_t                                                seqElemCountMax;
+    uint32_t                                                usePlainDispatchIndirect;
 } zstdgpu_UpdateDispatchArgs_SRT;
 
 typedef struct zstdgpu_DecompressHuffmanWeights_SRT
@@ -258,18 +259,6 @@ typedef struct zstdgpu_ExecuteSequences_SRT
     ZSTDGPU_RO_BUFFER(zstdgpu_CompressedBlockData)          inCompressedBlocks;
 } zstdgpu_ExecuteSequences_SRT;
 
-typedef struct zstdgpu_ComputeDestSequenceOffsets_SRT
-{
-    ZSTDGPU_RW_BUFFER(uint32_t)                             inoutDestSequenceOffsets;
-    ZSTDGPU_RO_BUFFER(zstdgpu_Counters)                     inCounters;
-    ZSTDGPU_RO_BUFFER(uint32_t)                             inBlockDestOffs;
-    ZSTDGPU_RO_BUFFER(uint32_t)                             inDecompressedSequenceMLen;
-    ZSTDGPU_RO_BUFFER(uint32_t)                             inPerSeqStreamSeqStart;
-    ZSTDGPU_RO_BUFFER(uint32_t)                             inSeqStreamToBlockId;
-    uint32_t                                                tgOffset;
-    uint32_t                                                workItemCount;
-} zstdgpu_ComputeDestSequenceOffsets_SRT;
-
 typedef struct zstdgpu_MemsetMemcpy_SRT
 {
     ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t)              inoutUnCompressedFramesData;
@@ -322,6 +311,7 @@ typedef struct zstdgpu_ParseCompressedBlocks_SRT
     ZSTDGPU_RO_BUFFER(zstdgpu_OffsetAndSize)                inBlocksCMPRefs;
     ZSTDGPU_RO_BUFFER(uint32_t)                             inPerFrameBlockCountCMP;
     ZSTDGPU_RO_BUFFER(uint32_t)                             inGlobalBlockIndexPerCmpBlock;
+    ZSTDGPU_RO_BUFFER(uint32_t)                             inDispatchArgs;
     uint32_t                                                tgOffset;
     uint32_t                                                workItemCount;
     uint32_t                                                compressedBufferSizeInBytes;
