@@ -20,6 +20,8 @@
 
 #ifdef __hlsl_dx_compiler
 
+ZSTDGPU_RO_BUFFER(uint32_t) ZstdInDispatchArgs  : register(t0);
+
 typedef struct zstdgpu_InitHuffmanTableAndDecompressLiterals_Consts
 {
     uint32_t    tgOffset;
@@ -28,13 +30,14 @@ typedef struct zstdgpu_InitHuffmanTableAndDecompressLiterals_Consts
 
 ConstantBuffer<zstdgpu_InitHuffmanTableAndDecompressLiterals_Consts> ZstdConstants_InitHuffmanTableAndDecompressLiterals : register(b0);
 
-#define ZSTDGPU_SRT_RS_InitHuffmanTableAndDecompressLiterals ZSTDGPU_SRT_RS_BIND_GROUP_LiteralStreams ", " ZSTDGPU_SRT_RS_BIND_GROUP_HuffmanWeights ", RootConstants(b0, num32BitConstants=2)"
+#define ZSTDGPU_SRT_RS_InitHuffmanTableAndDecompressLiterals ZSTDGPU_SRT_RS_BIND_GROUP_LiteralStreams ", " ZSTDGPU_SRT_RS_BIND_GROUP_HuffmanWeights ", SRV(t0)" ", RootConstants(b0, num32BitConstants=2)"
 
 static void zstdgpu_Srt_Fill(ZSTDGPU_PARAM_INOUT(zstdgpu_InitHuffmanTableAndDecompressLiterals_SRT) srt)
 {
     zstdgpu_Srt_FillBindGroup_LiteralStreams(srt);
     zstdgpu_Srt_FillBindGroup_HuffmanWeights(srt);
 
+    srt.inDispatchArgs  = ZstdInDispatchArgs;
     srt.tgOffset        = ZstdConstants_InitHuffmanTableAndDecompressLiterals.tgOffset;
     srt.workItemCount   = ZstdConstants_InitHuffmanTableAndDecompressLiterals.workItemCount;
 }
@@ -47,6 +50,8 @@ static void zstdgpu_Srt_Fill(zstdgpu_InitHuffmanTableAndDecompressLiterals_SRT &
 {
     zstdgpu_Srt_FillBindGroup_LiteralStreams(srt, cpuRes);
     zstdgpu_Srt_FillBindGroup_HuffmanWeights(srt, cpuRes);
+
+    srt.inDispatchArgs  = cpuRes.DispatchArgs;
     srt.tgOffset        = tgOffset;
     srt.workItemCount   = workItemCount;
 }

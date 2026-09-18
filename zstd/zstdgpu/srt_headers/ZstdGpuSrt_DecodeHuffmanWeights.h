@@ -22,6 +22,7 @@
 ZSTDGPU_RO_BUFFER(zstdgpu_Counters)         ZstdInCounters          : register(t0);
 ZSTDGPU_RO_BUFFER(uint32_t)                 ZstdInCompressedData    : register(t1);
 ZSTDGPU_RO_BUFFER(zstdgpu_OffsetAndSize)    ZstdInHufRefs           : register(t2);
+ZSTDGPU_RO_BUFFER(uint32_t)                 ZstdInDispatchArgs      : register(t3);
 
 typedef struct zstdgpu_DecodeHuffmanWeights_Consts
 {
@@ -32,7 +33,7 @@ typedef struct zstdgpu_DecodeHuffmanWeights_Consts
 
 ConstantBuffer<zstdgpu_DecodeHuffmanWeights_Consts> ZstdConstants_DecodeHuffmanWeights : register(b0);
 
-#define ZSTDGPU_SRT_RS_DecodeHuffmanWeights ZSTDGPU_SRT_RS_BIND_GROUP_HuffmanWeightsWrite ", SRV(t0)" ", SRV(t1)" ", SRV(t2)" ", RootConstants(b0, num32BitConstants=3)"
+#define ZSTDGPU_SRT_RS_DecodeHuffmanWeights ZSTDGPU_SRT_RS_BIND_GROUP_HuffmanWeightsWrite ", SRV(t0)" ", SRV(t1)" ", SRV(t2)" ", SRV(t3)" ", RootConstants(b0, num32BitConstants=3)"
 
 static void zstdgpu_Srt_Fill(ZSTDGPU_PARAM_INOUT(zstdgpu_DecodeHuffmanWeights_SRT) srt)
 {
@@ -41,6 +42,7 @@ static void zstdgpu_Srt_Fill(ZSTDGPU_PARAM_INOUT(zstdgpu_DecodeHuffmanWeights_SR
     srt.inCounters                  = ZstdInCounters;
     srt.inCompressedData            = ZstdInCompressedData;
     srt.inHufRefs                   = ZstdInHufRefs;
+    srt.inDispatchArgs              = ZstdInDispatchArgs;
     srt.tgOffset                    = ZstdConstants_DecodeHuffmanWeights.tgOffset;
     srt.workItemCount               = ZstdConstants_DecodeHuffmanWeights.workItemCount;
     srt.compressedBufferSizeInBytes = ZstdConstants_DecodeHuffmanWeights.compressedBufferSizeInBytes;
@@ -58,6 +60,7 @@ static void zstdgpu_Srt_Fill(zstdgpu_DecodeHuffmanWeights_SRT &srt, const zstdgp
     srt.inCounters                  = cpuRes.Counters;
     srt.inCompressedData            = cpuRes.CompressedData;
     srt.inHufRefs                   = cpuRes.HufRefs;
+    srt.inDispatchArgs              = cpuRes.DispatchArgs;
     srt.tgOffset                    = tgOffset;
     srt.workItemCount               = workItemCount;
     srt.compressedBufferSizeInBytes = compressedBufferSizeInBytes;

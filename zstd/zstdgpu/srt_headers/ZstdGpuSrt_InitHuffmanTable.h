@@ -20,7 +20,8 @@
 
 #ifdef __hlsl_dx_compiler
 
-ZSTDGPU_RO_BUFFER(zstdgpu_Counters) ZstdInCounters  : register(t0);
+ZSTDGPU_RO_BUFFER(zstdgpu_Counters) ZstdInCounters      : register(t0);
+ZSTDGPU_RO_BUFFER(uint32_t)         ZstdInDispatchArgs  : register(t1);
 
 typedef struct zstdgpu_InitHuffmanTable_Consts
 {
@@ -31,7 +32,7 @@ typedef struct zstdgpu_InitHuffmanTable_Consts
 
 ConstantBuffer<zstdgpu_InitHuffmanTable_Consts> ZstdConstants_InitHuffmanTable : register(b0);
 
-#define ZSTDGPU_SRT_RS_InitHuffmanTable ZSTDGPU_SRT_RS_BIND_GROUP_HuffmanWeights ", " ZSTDGPU_SRT_RS_BIND_GROUP_HuffmanTableWrite ", SRV(t0)" ", RootConstants(b0, num32BitConstants=3)"
+#define ZSTDGPU_SRT_RS_InitHuffmanTable ZSTDGPU_SRT_RS_BIND_GROUP_HuffmanWeights ", " ZSTDGPU_SRT_RS_BIND_GROUP_HuffmanTableWrite ", SRV(t0)" ", SRV(t1)" ", RootConstants(b0, num32BitConstants=3)"
 
 static void zstdgpu_Srt_Fill(ZSTDGPU_PARAM_INOUT(zstdgpu_InitHuffmanTable_SRT) srt)
 {
@@ -39,6 +40,7 @@ static void zstdgpu_Srt_Fill(ZSTDGPU_PARAM_INOUT(zstdgpu_InitHuffmanTable_SRT) s
     zstdgpu_Srt_FillBindGroup_HuffmanTableWrite(srt);
 
     srt.inCounters      = ZstdInCounters;
+    srt.inDispatchArgs  = ZstdInDispatchArgs;
     srt.tgOffset        = ZstdConstants_InitHuffmanTable.tgOffset;
     srt.workItemCount   = ZstdConstants_InitHuffmanTable.workItemCount;
     srt.fseCompressed   = ZstdConstants_InitHuffmanTable.fseCompressed;
@@ -55,6 +57,7 @@ static void zstdgpu_Srt_Fill(zstdgpu_InitHuffmanTable_SRT &srt, const zstdgpu_Re
     zstdgpu_Srt_FillBindGroup_HuffmanTableWrite(srt, cpuRes);
 
     srt.inCounters      = cpuRes.Counters;
+    srt.inDispatchArgs  = cpuRes.DispatchArgs;
     srt.tgOffset        = tgOffset;
     srt.workItemCount   = workItemCount;
     srt.fseCompressed   = fseCompressed;

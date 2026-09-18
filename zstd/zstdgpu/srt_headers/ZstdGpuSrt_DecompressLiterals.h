@@ -21,6 +21,8 @@
 
 #ifdef __hlsl_dx_compiler
 
+ZSTDGPU_RO_BUFFER(uint32_t) ZstdInDispatchArgs  : register(t0);
+
 typedef struct zstdgpu_DecompressLiterals_Consts
 {
     uint32_t    tgOffset;
@@ -29,7 +31,7 @@ typedef struct zstdgpu_DecompressLiterals_Consts
 
 ConstantBuffer<zstdgpu_DecompressLiterals_Consts> ZstdConstants_DecompressLiterals : register(b0);
 
-#define ZSTDGPU_SRT_RS_DecompressLiterals ZSTDGPU_SRT_RS_BIND_GROUP_LiteralStreams ", " ZSTDGPU_SRT_RS_BIND_GROUP_HuffmanTable ", " ZSTDGPU_SRT_RS_BIND_GROUP_LiteralDwords ", RootConstants(b0, num32BitConstants=2)"
+#define ZSTDGPU_SRT_RS_DecompressLiterals ZSTDGPU_SRT_RS_BIND_GROUP_LiteralStreams ", " ZSTDGPU_SRT_RS_BIND_GROUP_HuffmanTable ", " ZSTDGPU_SRT_RS_BIND_GROUP_LiteralDwords ", SRV(t0)" ", RootConstants(b0, num32BitConstants=2)"
 
 static void zstdgpu_Srt_Fill(ZSTDGPU_PARAM_INOUT(zstdgpu_DecompressLiterals_SRT) srt)
 {
@@ -37,6 +39,7 @@ static void zstdgpu_Srt_Fill(ZSTDGPU_PARAM_INOUT(zstdgpu_DecompressLiterals_SRT)
     zstdgpu_Srt_FillBindGroup_HuffmanTable(srt);
     zstdgpu_Srt_FillBindGroup_LiteralDwords(srt);
 
+    srt.inDispatchArgs  = ZstdInDispatchArgs;
     srt.tgOffset        = ZstdConstants_DecompressLiterals.tgOffset;
     srt.workItemCount   = ZstdConstants_DecompressLiterals.workItemCount;
 }
@@ -50,6 +53,8 @@ static void zstdgpu_Srt_Fill(zstdgpu_DecompressLiterals_SRT &srt, const zstdgpu_
     zstdgpu_Srt_FillBindGroup_LiteralStreams(srt, cpuRes);
     zstdgpu_Srt_FillBindGroup_HuffmanTable(srt, cpuRes);
     zstdgpu_Srt_FillBindGroup_LiteralDwords(srt, cpuRes);
+
+    srt.inDispatchArgs  = cpuRes.DispatchArgs;
     srt.tgOffset        = tgOffset;
     srt.workItemCount   = workItemCount;
 }
