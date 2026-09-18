@@ -32,6 +32,13 @@ void main(uint2 groupId : SV_GroupId, uint threadId : SV_GroupThreadId)
 {
     zstdgpu_ParseCompressedBlocks_SRT srt;
     zstdgpu_Srt_Fill(srt);
+    // TODO: make the srtgen tool put this at the end of zstdgpu_Srt_Fill:
+    if (int(srt.workItemCount) < 0)
+    {
+        const uint32_t slot = ~srt.workItemCount; // decode slot
+        const uint32_t baseIdx = slot * kzstdgpu_DispatchSlot_StrideInUInt32;
+        srt.workItemCount = ZstdInDispatchArgs[baseIdx + 1]; // skip tgOffset to load the actual workItemCount
+    }
 
     const uint32_t i = zstdgpu_ConvertTo32BitGroupId(groupId, srt.tgOffset) * kzstdgpu_TgSizeX_ParseCompressedBlocks + threadId;
 

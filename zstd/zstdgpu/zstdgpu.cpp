@@ -2364,7 +2364,7 @@ void zstdgpu_SubmitStage0(zstdgpu_PerRequestContext req, ID3D12GraphicsCommandLi
 
             // last written by [Update Dispatch Args :: Stage 0]
             // next read by ExecuteIndirect calls as argument/count buffers
-            setResourceState(barriers, bc ++, req->resData.gpuOnly.DispatchArgs, UNORDERED_ACCESS, INDIRECT_ARGUMENT);
+            setResourceState(barriers, bc ++, req->resData.gpuOnly.DispatchArgs, UNORDERED_ACCESS, COMMON); // after is SRV+INDIRECT
             setResourceState(barriers, bc ++, req->resData.gpuOnly.DispatchCnts, UNORDERED_ACCESS, INDIRECT_ARGUMENT);
 
             // last written by [Update Dispatch Args :: Stage 0]
@@ -2582,9 +2582,31 @@ void zstdgpu_SubmitStage1(zstdgpu_PerRequestContext req, ID3D12GraphicsCommandLi
         zstdgpu_Bind_ParseCompressedBlocks_Stage1(cmdList, req->srts, req->resData.gpuOnly, req->resInfo.CompressedData_ByteSize, req->zstdFrameCount);
         // NOTE: Slots 0 (tgOffset) and 1 (workItemCount) are set by command signature via indirect dispatch
 
+        /*
+        #define zstdgpu_DispatchIndirect(cmdList, kernelName, counterName)
+        cmdList->ExecuteIndirect(req->kernelName##_CmdSig,
+                                 kzstdgpu_DispatchSlot_CmdsPerSlot,
+                                 req->resData.gpuOnly.DispatchArgs,
+                                 kzstdgpu_DispatchSlot_##counterName * kzstdgpu_DispatchSlot_StrideInUInt32 * sizeof(uint32_t),
+                                 req->resData.gpuOnly.DispatchCnts,
+                                 kzstdgpu_DispatchSlot_##counterName * sizeof(uint32_t));
+        */
+
+#if 0
         ZSTDGPU_KERNEL_SCOPE(ParseCompressedBlocks, cmdList,
             zstdgpu_DispatchIndirect(cmdList, ParseCompressedBlocks, ParseCompressedBlocks);
         );
+#else
+        const uint32_t data[2] = { 0, ~kzstdgpu_DispatchSlot_ParseCompressedBlocks }; // { tgOffset, encoded workItemCount }
+        cmdList->SetComputeRoot32BitConstants(kzstdgpu_SrtConstsRootSlot_ParseCompressedBlocks, 2, data, 0);
+        cmdList->ExecuteIndirect(
+            req->dispatchCmdSig, 1, // plain DispatchIndirect signature and MaxCommandCount=1
+            req->resData.gpuOnly.DispatchArgs, // args buffer
+            // Layout of argument buffer is unchanged, skip 2 DWORDs since we aren't setting tgOffset and workItemCount indirectly:
+            kzstdgpu_DispatchSlot_ParseCompressedBlocks * kzstdgpu_DispatchSlot_StrideInUInt32 * sizeof(uint32_t) + 2 * sizeof(uint32_t),
+            nullptr, 0); // no indirect count
+#endif
+
         PIXEndEvent(cmdList);
     }
 
@@ -2688,7 +2710,7 @@ void zstdgpu_SubmitStage1(zstdgpu_PerRequestContext req, ID3D12GraphicsCommandLi
         uint32_t bc = 0;
         // last written by [Update Dispatch Args]
         // next read by [Propagate FSE Index] / [Compute `Per-Huffman Table` Literal Stream Count Prefix] via ExecuteIndirect
-        setResourceState(barriers, bc ++, req->resData.gpuOnly.DispatchArgs, UNORDERED_ACCESS, INDIRECT_ARGUMENT);
+        setResourceState(barriers, bc ++, req->resData.gpuOnly.DispatchArgs, UNORDERED_ACCESS, COMMON); // after is SRV+INDIRECT
         setResourceState(barriers, bc ++, req->resData.gpuOnly.DispatchCnts, UNORDERED_ACCESS, INDIRECT_ARGUMENT);
 
         if (0 == zstdgpu_IsReadbackRequired(req, 1))
@@ -2835,7 +2857,7 @@ void zstdgpu_SubmitStage2(zstdgpu_PerRequestContext req, ID3D12GraphicsCommandLi
         setResourceUavToSrvCopyIndirectSync(barriers, bc ++, req->resData.gpuOnly.Counters);
         // last written by [Update Dispatch Args] and [Compute `Per-Huffman Table` Literal Stream Count Prefix]
         // next read by ExecuteIndirect calls as argument buffer
-        setResourceState(barriers, bc ++, req->resData.gpuOnly.DispatchArgs, UNORDERED_ACCESS, INDIRECT_ARGUMENT);
+        setResourceState(barriers, bc ++, req->resData.gpuOnly.DispatchArgs, UNORDERED_ACCESS, COMMON); // after is SRV+INDIRECT
         // last written by [Update Dispatch Args] and [Compute `Per-Huffman Table` Literal Stream Count Prefix]
         // next read by ExecuteIndirect calls as count buffer
         setResourceState(barriers, bc ++, req->resData.gpuOnly.DispatchCnts, UNORDERED_ACCESS, INDIRECT_ARGUMENT);
