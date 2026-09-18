@@ -23,7 +23,7 @@
 #endif
 
 [RootSignature(ZSTDGPU_SRT_RS_ParseFrames)]
-[numthreads(kzstdgpu_TgSizeX_ParseCompressedBlocks, 1, 1)]
+[numthreads(kzstdgpu_TgSizeX_ParseFrames, 1, 1)]
 void main(uint i : SV_DispatchThreadId)
 {
     zstdgpu_ParseFrames_SRT srt;

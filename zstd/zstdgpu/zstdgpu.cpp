@@ -2282,7 +2282,7 @@ void zstdgpu_SubmitStage0(zstdgpu_PerRequestContext req, ID3D12GraphicsCommandLi
 
         zstdgpu_Bind_ParseFrames_Stage0(cmdList, req->srts, req->resData.gpuOnly, req->zstdFrameCount, req->resInfo.CompressedData_ByteSize, countBlocksOnly);
         ZSTDGPU_KERNEL_SCOPE(ParseFrames_CountBlocks, cmdList,
-            cmdList->Dispatch(ZSTDGPU_TG_COUNT(req->zstdFrameCount, kzstdgpu_TgSizeX_ParseCompressedBlocks), 1, 1);
+            cmdList->Dispatch(ZSTDGPU_TG_COUNT(req->zstdFrameCount, kzstdgpu_TgSizeX_ParseFrames), 1, 1);
         );
         PIXEndEvent(cmdList);
     }
@@ -2506,7 +2506,7 @@ void zstdgpu_SubmitStage1(zstdgpu_PerRequestContext req, ID3D12GraphicsCommandLi
 
         zstdgpu_Bind_ParseFrames_Stage1(cmdList, req->srts, req->resData.gpuOnly, req->zstdFrameCount, req->resInfo.CompressedData_ByteSize, countBlocksOnly);
         ZSTDGPU_KERNEL_SCOPE(ParseFrames, cmdList,
-            cmdList->Dispatch(ZSTDGPU_TG_COUNT(req->zstdFrameCount, kzstdgpu_TgSizeX_ParseCompressedBlocks), 1, 1);
+            cmdList->Dispatch(ZSTDGPU_TG_COUNT(req->zstdFrameCount, kzstdgpu_TgSizeX_ParseFrames), 1, 1);
         );
         PIXEndEvent(cmdList);
     }
@@ -2605,12 +2605,14 @@ void zstdgpu_SubmitStage1(zstdgpu_PerRequestContext req, ID3D12GraphicsCommandLi
 #else
         const uint32_t data[2] = { 0, ~kzstdgpu_DispatchSlot_ParseCompressedBlocks }; // { tgOffset, encoded workItemCount }
         cmdList->SetComputeRoot32BitConstants(kzstdgpu_SrtConstsRootSlot_ParseCompressedBlocks, 2, data, 0);
-        cmdList->ExecuteIndirect(
-            req->dispatchCmdSig, 1, // plain DispatchIndirect signature and MaxCommandCount=1
-            req->resData.gpuOnly.DispatchArgs, // args buffer
-            // Layout of argument buffer is unchanged, skip 2 DWORDs since we aren't setting tgOffset and workItemCount indirectly:
-            kzstdgpu_DispatchSlot_ParseCompressedBlocks * kzstdgpu_DispatchSlot_StrideInUInt32 * sizeof(uint32_t) + 2 * sizeof(uint32_t),
-            nullptr, 0); // no indirect count
+        ZSTDGPU_KERNEL_SCOPE(ParseCompressedBlocks, cmdList,
+            cmdList->ExecuteIndirect(
+                req->dispatchCmdSig, 1, // plain DispatchIndirect signature and MaxCommandCount=1
+                req->resData.gpuOnly.DispatchArgs, // args buffer
+                // Layout of argument buffer is unchanged, skip 2 DWORDs since we aren't setting tgOffset and workItemCount indirectly:
+                kzstdgpu_DispatchSlot_ParseCompressedBlocks* kzstdgpu_DispatchSlot_StrideInUInt32 * sizeof(uint32_t) + 2 * sizeof(uint32_t),
+                nullptr, 0); // no indirect count
+        );
 #endif
 
         PIXEndEvent(cmdList);

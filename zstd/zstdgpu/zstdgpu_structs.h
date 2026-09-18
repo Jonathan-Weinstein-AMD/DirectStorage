@@ -381,6 +381,7 @@ static const uint32_t kzstdgpu_TgSizeX_PrefixSum = 64;
 static const uint32_t kzstdgpu_TgSizeX_PrefixSum = 32;
 #endif
 
+static const uint32_t kzstdgpu_TgSizeX_ParseFrames = 32;
 static const uint32_t kzstdgpu_TgSizeX_ParseCompressedBlocks = 32;
 
 // NOTE(pamartis): Propagation works at wave-level through `WaveReadLaneAt` wave intrinsic,
