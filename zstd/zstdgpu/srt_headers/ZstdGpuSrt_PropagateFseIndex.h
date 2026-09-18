@@ -38,6 +38,12 @@ static void zstdgpu_Srt_Fill(ZSTDGPU_PARAM_INOUT(zstdgpu_PropagateFseIndex_SRT) 
     srt.inDispatchArgs          = ZstdInDispatchArgs;
     srt.tgOffset                = ZstdConstants_PropagateFseIndex.tgOffset;
     srt.workItemCount           = ZstdConstants_PropagateFseIndex.workItemCount;
+    if (int(srt.workItemCount) < 0)
+    {
+        const uint32_t slot = ~srt.workItemCount; // decode slot
+        const uint32_t baseIdx = slot * kzstdgpu_DispatchSlot_StrideInUInt32;
+        srt.workItemCount = ZstdInDispatchArgs[baseIdx + 1]; // skip tgOffset to load the actual workItemCount
+    }
 }
 
 #else

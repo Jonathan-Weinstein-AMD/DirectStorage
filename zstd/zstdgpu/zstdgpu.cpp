@@ -939,8 +939,6 @@ ZSTDGPU_ENUM(Status) zstdgpu_CreatePersistentContext(zstdgpu_PersistentContext *
         D3D12AID_CHECK(adapter->GetDesc(&desc));
         D3D12AID_SAFE_RELEASE(adapter);
 
-        context->usePlainDispatchIndirect = false; // TODO
-
         if (desc.VendorId == 0x1002)
         {
             // AMD
@@ -949,6 +947,8 @@ ZSTDGPU_ENUM(Status) zstdgpu_CreatePersistentContext(zstdgpu_PersistentContext *
             ZSTDGPU_KERNEL_MAP(DecompressSequences, DecompressSequences_SingleStream_ScalarFseLoad32);
             context->DecompressSequences_StreamsPerGroup = 1;
             ZSTDGPU_KERNEL_MAP(ExecuteSequences, ExecuteSequences64);
+
+            context->usePlainDispatchIndirect = false; // TODO
         }
         else if (desc.VendorId == 0x10de)
         {

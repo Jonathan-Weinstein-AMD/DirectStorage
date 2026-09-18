@@ -1116,6 +1116,21 @@ static void emitSrtHeader(const char *dir, int srtIdx)
     for (i = 0; i < srt->boundConstCount; ++i)
         sb_Fmt(b, "    srt.%-*s= ZstdConstants_%s.%s;\n", maxNameLen, nameToCStr(boundConsts[i].name), nameToCStr(srt->name), nameToCStr(boundConsts[i].name));
 
+    for (i = 0; i < srt->constCount; ++i)
+    {
+        if (kConstIndirect == srt->consts[i].kind)
+        {
+            /** has an indirect const */
+            sb_StrLitEoL(b, "    if (int(srt.workItemCount) < 0)");
+            sb_StrLitEoL(b, "    {");
+            sb_StrLitEoL(b, "        const uint32_t slot = ~srt.workItemCount; // decode slot");
+            sb_StrLitEoL(b, "        const uint32_t baseIdx = slot * kzstdgpu_DispatchSlot_StrideInUInt32;");
+            sb_StrLitEoL(b, "        srt.workItemCount = ZstdInDispatchArgs[baseIdx + 1]; // skip tgOffset to load the actual workItemCount");
+            sb_StrLitEoL(b, "    }");
+            break;
+        }
+    }
+
     sb_StrLitEoL(b, "}\n\n#else\n");
 
     resourcesUsed = (srt->groupCount > 0);

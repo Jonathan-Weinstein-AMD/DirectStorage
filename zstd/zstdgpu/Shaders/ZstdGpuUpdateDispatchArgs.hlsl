@@ -27,9 +27,7 @@ void main()
 
     zstdgpu_Srt_Fill(srt);
 
-    // TODO: read this from root constants and pass this up to the other zstdgpu_EmitDispatch calls.
-    // For now just try ParseCompressedBlocks.
-    const bool usePlainDispatchIndirect = false;
+    const bool usePlainDispatchIndirect = srt.usePlainDispatchIndirect;
 
     if (srt.stage == 0)
     {
@@ -49,7 +47,7 @@ void main()
         zstdgpu_EmitDispatch(srt.inoutDispatchArgs, srt.inoutDispatchCnts, kzstdgpu_DispatchSlot_PrefixBlockSizesRAW,      rawBlockCount,                            kzstdgpu_TgSizeX_PrefixSum, usePlainDispatchIndirect);
         zstdgpu_EmitDispatch(srt.inoutDispatchArgs, srt.inoutDispatchCnts, kzstdgpu_DispatchSlot_MemcpyRAW,                srt.inoutCounters[0].BlocksBytes_RAW,          kzstdgpu_TgSizeX_MemsetMemcpy, usePlainDispatchIndirect);
         zstdgpu_EmitDispatch(srt.inoutDispatchArgs, srt.inoutDispatchCnts, kzstdgpu_DispatchSlot_MemsetRLE,                srt.inoutCounters[0].BlocksBytes_RLE,          kzstdgpu_TgSizeX_MemsetMemcpy, usePlainDispatchIndirect);
-        zstdgpu_EmitDispatch(srt.inoutDispatchArgs, srt.inoutDispatchCnts, kzstdgpu_DispatchSlot_ParseCompressedBlocks,    cmpBlockCount,                            kzstdgpu_TgSizeX_ParseCompressedBlocks, true); // just test this first
+        zstdgpu_EmitDispatch(srt.inoutDispatchArgs, srt.inoutDispatchCnts, kzstdgpu_DispatchSlot_ParseCompressedBlocks,    cmpBlockCount,                            kzstdgpu_TgSizeX_ParseCompressedBlocks, usePlainDispatchIndirect);
 
         // Memset dispatch slots for InitResources Stage 1
         zstdgpu_EmitDispatch(srt.inoutDispatchArgs, srt.inoutDispatchCnts, kzstdgpu_DispatchSlot_Memset_RawBlockLookback,    zstdgpu_GetLookbackBlockCount(rawBlockCount),                    kzstdgpu_TgSizeX_Memset, usePlainDispatchIndirect);

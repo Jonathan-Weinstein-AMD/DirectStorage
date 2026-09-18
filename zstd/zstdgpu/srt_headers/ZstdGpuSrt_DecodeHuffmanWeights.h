@@ -46,6 +46,12 @@ static void zstdgpu_Srt_Fill(ZSTDGPU_PARAM_INOUT(zstdgpu_DecodeHuffmanWeights_SR
     srt.tgOffset                    = ZstdConstants_DecodeHuffmanWeights.tgOffset;
     srt.workItemCount               = ZstdConstants_DecodeHuffmanWeights.workItemCount;
     srt.compressedBufferSizeInBytes = ZstdConstants_DecodeHuffmanWeights.compressedBufferSizeInBytes;
+    if (int(srt.workItemCount) < 0)
+    {
+        const uint32_t slot = ~srt.workItemCount; // decode slot
+        const uint32_t baseIdx = slot * kzstdgpu_DispatchSlot_StrideInUInt32;
+        srt.workItemCount = ZstdInDispatchArgs[baseIdx + 1]; // skip tgOffset to load the actual workItemCount
+    }
 }
 
 #else
