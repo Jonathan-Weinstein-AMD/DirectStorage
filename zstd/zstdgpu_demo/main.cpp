@@ -1433,6 +1433,7 @@ static int demoRun(void *demoCtx)
     uint32_t maxFrame = ~0u;
     uint32_t frameBatchCount = ~0u; // ~0u => one batch spanning the whole working set
     uint32_t zstdOffs = 0;
+    int eiwa = -1; // executeIndirectWorkaround tri-state: { -1 (default) => vendored, 0 => force off, 1 => force on }
 
 #ifndef _GAMING_XBOX
     {
@@ -1448,6 +1449,7 @@ static int demoRun(void *demoCtx)
             bool nextMaxFrame = false;
             bool nextFrameBatchCount = false;
             bool nextZstdOffs = false;
+            bool nextEiwa = false;
             bool badArg = false;
             for (argi = 1; argi < argc; ++argi)
             {
@@ -1478,7 +1480,7 @@ static int demoRun(void *demoCtx)
                     nextGpuVenId = false;
                     nextGpuDevId = false;
                 }
-                else if (nextRepCount || nextPrfLevel || nextMinFrame || nextMaxFrame || nextFrameBatchCount || nextZstdOffs)
+                else if (nextRepCount || nextPrfLevel || nextMinFrame || nextMaxFrame || nextFrameBatchCount || nextZstdOffs || nextEiwa)
                 {
                     errno = 0;
                     wchar_t *end = NULL;
@@ -1500,6 +1502,8 @@ static int demoRun(void *demoCtx)
                             frameBatchCount = value;
                         else if (nextZstdOffs)
                             zstdOffs = value;
+                        else if (nextEiwa)
+                            eiwa = value;
                     }
 
                     nextRepCount = false;
@@ -1508,6 +1512,7 @@ static int demoRun(void *demoCtx)
                     nextMaxFrame = false;
                     nextFrameBatchCount = false;
                     nextZstdOffs = false;
+                    nextEiwa = false;
                 }
                 else if (0 == wcscmp(argv[argi], L"--chk-gpu"))
                 {
@@ -1586,6 +1591,10 @@ static int demoRun(void *demoCtx)
                 else if (0 == wcscmp(argv[argi], L"--zst-ofs"))
                 {
                     nextZstdOffs = true;
+                }
+                else if (0 == wcscmp(argv[argi], L"--eiwa"))
+                {
+                    nextEiwa = true;
                 }
                 else if (0 == wcscmp(argv[argi], L"--out-frm"))
                 {
@@ -1900,8 +1909,11 @@ static int demoRun(void *demoCtx)
 
     debugPrint(L"[INFO] Initializing 'zstdgpu' Persistent Context.\n");
     {
+        zstdgpu_PersistentContextSettings settings = { };
+        settings.eiwa = eiwa;
+
         const uint32_t persistentMemorySize = zstdgpu_GetPersistentContextRequiredMemorySizeInBytes();
-        ZSTDGPU_ENUM(Status) status = zstdgpu_CreatePersistentContext(&persistentContext, device, malloc(persistentMemorySize), persistentMemorySize);
+        ZSTDGPU_ENUM(Status) status = zstdgpu_CreatePersistentContext(&persistentContext, device, malloc(persistentMemorySize), persistentMemorySize, &settings);
         ZSTDGPU_ASSERT(ZSTDGPU_ENUM_CONST(StatusSuccess) == status);
     }
 
