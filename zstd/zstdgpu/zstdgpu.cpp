@@ -3217,16 +3217,22 @@ void zstdgpu_SubmitStage2(zstdgpu_PerRequestContext req, ID3D12GraphicsCommandLi
     }
     {
         PIXBeginEvent(cmdList, PIX_COLOR_DEFAULT, L"Barrier with Resources for [Execute Sequences]");
-        D3D12_RESOURCE_BARRIER barriers[1];
+        D3D12_RESOURCE_BARRIER barriers[2];
         uint32_t bc = 0;
         {
             // in case if the number of RAW+RLE blocks > 0, [Memcpy RAW blocks, Memset RLE blocks] has written to 'UnCompressedFramesData'
             // next read by [Execute Sequences]
-            setResourceUavSync(barriers, bc + 0, req->resData.gpuOnly.UnCompressedFramesData);
-            bc += 1;
+            setResourceUavSync(barriers, bc ++, req->resData.gpuOnly.UnCompressedFramesData);
+            // Counters is only read by [Execute Sequences] (bound as an SRV), so it stays in its read state - no UAV transition needed.
+            // However, counters is read back afterwards. The version of GBV that ships with PIX 2603.25 will flag that copy,
+            // saying counters was implicitly promoted from COMMON and in state NON_PIXEL_SHADER_RESOURCE only at the copy.
+            // We could avoid that GBV warning by doing the following either here, or after [Execute Sequences].
+            if (0)
+            {
+                setResourceState(barriers, bc ++, req->resData.gpuOnly.Counters, NON_PIXEL_SHADER_RESOURCE, COPY_SOURCE_AND_SRV);
+            }
         }
-        // Counters is only read by [Execute Sequences] (bound as an SRV), so it stays in its read state - no UAV transition needed.
-
+        ZSTDGPU_ASSERT(bc <= _countof(barriers));
         cmdList->ResourceBarrier(bc, barriers);
         PIXEndEvent(cmdList);
     }
