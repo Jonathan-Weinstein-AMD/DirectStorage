@@ -948,8 +948,7 @@ ZSTDGPU_ENUM(Status) zstdgpu_CreatePersistentContext(zstdgpu_PersistentContext *
             context->DecompressSequences_StreamsPerGroup = 1;
             ZSTDGPU_KERNEL_MAP(ExecuteSequences, ExecuteSequences64);
 
-            context->executeIndirectWorkaround = wcsstr(desc.Description, L"RX 9060") ||
-                                                 wcsstr(desc.Description, L"RX 9070");
+            context->executeIndirectWorkaround = (desc.DeviceId >= 0x7500);
         }
         else if (desc.VendorId == 0x10de)
         {
