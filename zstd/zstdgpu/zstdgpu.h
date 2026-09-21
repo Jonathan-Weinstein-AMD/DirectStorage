@@ -121,9 +121,11 @@ typedef enum zstdgpu_Status
     kzstdgpu_StatusForceInt         = 0x7fffffff
 } zstdgpu_Status;
 
+// this struct has a constructor
 struct zstdgpu_PersistentContextSettings
 {
-    int eiwa;
+    int eiwa = -1; // executeIndirectWorkaround tri-state:
+                   // { -1 (default) => derived from adapter info, 0 => force off, 1 => force on }
 };
 
 typedef struct zstdgpu_PersistentContextImpl *zstdgpu_PersistentContext;
@@ -132,7 +134,7 @@ typedef struct zstdgpu_PerRequestContextImpl *zstdgpu_PerRequestContext;
 ZSTDGPU_API uint32_t zstdgpu_GetPersistentContextRequiredMemorySizeInBytes(void);
 ZSTDGPU_API uint32_t zstdgpu_GetPerRequestContextRequiredMemorySizeInBytes(void);
 
-ZSTDGPU_API zstdgpu_Status zstdgpu_CreatePersistentContext(zstdgpu_PersistentContext *outPersistentContext, struct ID3D12Device *device, void *memoryBlock, uint32_t memoryBlockSizeInBytes, const zstdgpu_PersistentContextSettings* settings);
+ZSTDGPU_API zstdgpu_Status zstdgpu_CreatePersistentContext(zstdgpu_PersistentContext *outPersistentContext, struct ID3D12Device *device, void *memoryBlock, uint32_t memoryBlockSizeInBytes, const zstdgpu_PersistentContextSettings& settings);
 ZSTDGPU_API zstdgpu_Status zstdgpu_DestroyPersistentContext(void **outMemoryBlock, uint32_t *outMemoryBlockSizeInBytes, zstdgpu_PersistentContext inPersistentContext);
 
 ZSTDGPU_API zstdgpu_Status zstdgpu_CreatePerRequestContext(zstdgpu_PerRequestContext *outPerRequestContext, zstdgpu_PersistentContext inPersistentContext, void *memoryBlock, uint32_t memoryBlockSizeInBytes);

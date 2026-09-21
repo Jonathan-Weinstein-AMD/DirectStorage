@@ -1433,7 +1433,7 @@ static int demoRun(void *demoCtx)
     uint32_t maxFrame = ~0u;
     uint32_t frameBatchCount = ~0u; // ~0u => one batch spanning the whole working set
     uint32_t zstdOffs = 0;
-    int eiwa = -1; // executeIndirectWorkaround tri-state: { -1 (default) => vendored, 0 => force off, 1 => force on }
+    zstdgpu_PersistentContextSettings settings; // constructor sets defaults
 
 #ifndef _GAMING_XBOX
     {
@@ -1503,7 +1503,7 @@ static int demoRun(void *demoCtx)
                         else if (nextZstdOffs)
                             zstdOffs = value;
                         else if (nextEiwa)
-                            eiwa = value;
+                            settings.eiwa = value;
                     }
 
                     nextRepCount = false;
@@ -1909,11 +1909,8 @@ static int demoRun(void *demoCtx)
 
     debugPrint(L"[INFO] Initializing 'zstdgpu' Persistent Context.\n");
     {
-        zstdgpu_PersistentContextSettings settings = { };
-        settings.eiwa = eiwa;
-
         const uint32_t persistentMemorySize = zstdgpu_GetPersistentContextRequiredMemorySizeInBytes();
-        ZSTDGPU_ENUM(Status) status = zstdgpu_CreatePersistentContext(&persistentContext, device, malloc(persistentMemorySize), persistentMemorySize, &settings);
+        ZSTDGPU_ENUM(Status) status = zstdgpu_CreatePersistentContext(&persistentContext, device, malloc(persistentMemorySize), persistentMemorySize, settings);
         ZSTDGPU_ASSERT(ZSTDGPU_ENUM_CONST(StatusSuccess) == status);
     }
 
