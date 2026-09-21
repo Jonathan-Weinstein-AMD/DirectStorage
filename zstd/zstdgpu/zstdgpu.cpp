@@ -868,7 +868,7 @@ uint32_t zstdgpu_GetPerRequestContextRequiredMemorySizeInBytes(void)
     return sizeof(zstdgpu_PerRequestContextImpl);
 }
 
-ZSTDGPU_ENUM(Status) zstdgpu_CreatePersistentContext(zstdgpu_PersistentContext *outPersistentContext, ID3D12Device *device, void *memoryBlock, uint32_t memoryBlockSizeInBytes, const zstdgpu_PersistentContextSettings& settings)
+ZSTDGPU_ENUM(Status) zstdgpu_CreatePersistentContext(zstdgpu_PersistentContext *outPersistentContext, ID3D12Device *device, void *memoryBlock, uint32_t memoryBlockSizeInBytes)
 {
     uint32_t proceed = 1;
 
@@ -988,11 +988,6 @@ ZSTDGPU_ENUM(Status) zstdgpu_CreatePersistentContext(zstdgpu_PersistentContext *
 #endif
         #undef ZSTDGPU_KERNEL_GET
         #undef ZSTDGPU_KERNEL_MAP
-
-        if (settings.eiwa >= 0)
-        {
-            context->executeIndirectWorkaround = (settings.eiwa != 0);
-        }
 
         /** NOTE(pamartis): generate PipelineState / RootSignature initialisation through macro list */
         #define ZSTDGPU_KERNEL(name) \

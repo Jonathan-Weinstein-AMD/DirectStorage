@@ -45,10 +45,9 @@ namespace Decompression
         if (!memoryBlock)
             return E_OUTOFMEMORY;
 
-        zstdgpu_PersistentContextSettings settings;
         zstdgpu_PersistentContext context = nullptr;
         HRESULT hr =
-            hresult_from_status(zstdgpu_CreatePersistentContext(&context, device, memoryBlock, contextSizeBytes, settings));
+            hresult_from_status(zstdgpu_CreatePersistentContext(&context, device, memoryBlock, contextSizeBytes));
         if (SUCCEEDED(hr))
         {
             *persistantContext = context;
