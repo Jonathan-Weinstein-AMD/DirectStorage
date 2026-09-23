@@ -458,6 +458,10 @@ static void groupEnd(void)
     g_currentGroup = -1;
 }
 
+/** forward declarations: srtEnd()/passEnd() auto-bind DispatchArgs for Indirect SRTs via these, defined further below */
+static void addBuf(uint16_t access, uint16_t kind, uint16_t glc, const char *hlslType, const char *dataType, const char *name, const char *aliasPostfix);
+static void passBind(const char *slot, const char *resource);
+
 static int checkDispatch(const char *what, const char *name, int dispatch)
 {
     if (Direct != dispatch && Indirect != dispatch)
@@ -483,6 +487,14 @@ static void srtBegin(const char *name, int dispatch)
 
 static void srtEnd(void)
 {
+    if (g_currentSrt >= 0 && Indirect == g_srts[g_currentSrt].indirect)
+    {
+        /** Every Indirect SRT needs to read the real workItemCount out of DispatchArgs when
+         *  it was invoked via the executeIndirectWorkaround path (see the fixup code emitted
+         *  in emitSrtHeader() for any SRT with a kConstIndirect const) -- so bind it here for
+         *  every Indirect SRT instead of requiring each one to declare it by hand. */
+        addBuf(kAccessRO, kKindStruct, 0, "uint32_t", "uint32_t", "DispatchArgs", "");
+    }
     g_currentSrt = -1;
 }
 
@@ -700,6 +712,13 @@ static void passEnd(void)
         Pass *pass = &g_passes[g_currentPass];
         Srt  *srt = &g_srts[pass->srtIdx];
         int   i;
+
+        if (Indirect == srt->indirect)
+        {
+            /** DispatchArgs is auto-bound for every pass of an Indirect SRT (see srtEnd()),
+             *  regardless of whether this particular pass itself dispatches Direct or Indirect. */
+            passBind("DispatchArgs", "DispatchArgs");
+        }
 
         for (i = 0; i < srt->rootBufCount; ++i)
         {
