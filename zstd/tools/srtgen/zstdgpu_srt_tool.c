@@ -715,7 +715,7 @@ static void passEnd(void)
 
         if (Indirect == srt->indirect)
         {
-            /** DispatchArgs is auto-bound for every pass of an Indirect SRT (see srtEnd()),
+            /** executeIndirectWorkaround: DispatchArgs is auto-bound for every pass of an Indirect SRT (see srtEnd()),
              *  regardless of whether this particular pass itself dispatches Direct or Indirect. */
             passBind("DispatchArgs", "DispatchArgs");
         }

@@ -2182,11 +2182,9 @@ ZSTDGPU_ENUM(Status) zstdgpu_SubmitAllStagesWithInteralMemory(zstdgpu_PerRequest
 
 #endif
 
+// For executeIndirectWorkaround, this is the DispatchArg buffer's after state from before state UAV.
 static const D3D12_RESOURCE_STATES D3D12_RESOURCE_STATE_INDIRECT_AND_SRV = D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT |
                                                                            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-
-static const D3D12_RESOURCE_STATES D3D12_RESOURCE_STATE_COPY_SOURCE_AND_SRV = D3D12_RESOURCE_STATE_COPY_SOURCE |
-                                                                              D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
 
 static void zstdgpu_DispatchExecuteIndirectWorkaround(
     zstdgpu_PerRequestContext req,
@@ -2371,10 +2369,10 @@ void zstdgpu_SubmitStage0(zstdgpu_PerRequestContext req, ID3D12GraphicsCommandLi
 
         PIXEndEvent(cmdList);
     }
-    // The prefix sums above bind DispatchArgs as a root-SRV as its first use. UpdateDispatchArgs needs it in state UAV,
-    // otherwise the debug later will complain about RESOURCE_BARRIER_BEFORE_AFTER_MISMATCH.
+    // executeIndirectWorkaround: The prefix sums above bind DispatchArgs as a root-SRV as its first use.
+    // UpdateDispatchArgs needs it in state UAV, otherwise the debug later will flag RESOURCE_BARRIER_BEFORE_AFTER_MISMATCH.
     {
-        PIXBeginEvent(cmdList, PIX_COLOR_DEFAULT, L"[Barrier for ExecuteIndirect workaround]");
+        PIXBeginEvent(cmdList, PIX_COLOR_DEFAULT, L"[Barrier for ExecuteIndirectWorkaround]");
         D3D12_RESOURCE_BARRIER barriers[1];
         uint32_t bc = 0;
         setResourceState(barriers, bc++, req->resData.gpuOnly.DispatchArgs, NON_PIXEL_SHADER_RESOURCE, UNORDERED_ACCESS);
