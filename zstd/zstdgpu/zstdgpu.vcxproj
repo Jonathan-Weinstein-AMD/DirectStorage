@@ -268,10 +268,16 @@
   </Target>
   <Target Name="CollectShaders">
     <ItemGroup>
-      <Shader Include="$(MSBuildThisFileDirectory)Shaders\*.hlsl">
+      <!-- All normal shaders -->
+      <Shader Include="$(MSBuildThisFileDirectory)Shaders\*.hlsl"
+              Exclude="$(MSBuildThisFileDirectory)Shaders\*_cs66.hlsl">
         <ShaderModel>cs_6_0</ShaderModel>
-        <Opts>
-        </Opts>
+        <Opts></Opts>
+      </Shader>
+      <!-- Shader Model 6.6 shaders -->
+      <Shader Include="$(MSBuildThisFileDirectory)Shaders\*_cs66.hlsl">
+        <ShaderModel>cs_6_6</ShaderModel>
+        <Opts></Opts>
       </Shader>
     </ItemGroup>
     <Message Text="%(Shader.FullPath)" />

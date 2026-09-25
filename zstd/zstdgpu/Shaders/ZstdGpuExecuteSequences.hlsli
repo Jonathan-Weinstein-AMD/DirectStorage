@@ -20,12 +20,16 @@
 
 [RootSignature(ZSTDGPU_SRT_RS_ExecuteSequences)]
 [numthreads(MAX_COPY_SIZE, 1, 1)]
+#if FORCED_WAVE_SIZE
+[wavesize(FORCED_WAVE_SIZE)]
+#endif
 void main(uint groupId : SV_GroupId, uint i : SV_GroupThreadId)
 {
+#if FORCED_WAVE_SIZE != MAX_COPY_SIZE
     // Retire redundant waves (just recomputing the same result) when the GPU wave is narrower than the group.
     if (i >= WaveGetLaneCount())
         return;
-
+#endif
     zstdgpu_ExecuteSequences_SRT srt;
     zstdgpu_Srt_Fill(srt);
 

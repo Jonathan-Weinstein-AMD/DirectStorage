@@ -71,9 +71,22 @@ ZSTDGPU_WARN_POP_MSVC()
 #include "ZstdGpuDecompressSequences_SingleStream_ScalarFseLoad128.h"
 #include "ZstdGpuDecompressSequences_SingleStream_ScalarFseLoad64.h"
 #include "ZstdGpuDecompressSequences_SingleStream_ScalarFseLoad32.h"
-#include "ZstdGpuExecuteSequences128.h"
+
 #include "ZstdGpuExecuteSequences64.h"
+#if defined(_GAMING_XBOX) || defined(_GAMING_XBOX_SCARLETT) || defined(_GAMING_XBOX_XBOXONE) \
+    || defined(__XBOX_SCARLETT) || defined(__XBOX_ONE)
+// Console uses regular ExecuteSequences64.
+// ZSTDGPU_RUNTIME_KERNEL_LIST_SPECIALISED already makes it so a single PSO per specialized shader is created
+// (and a PSO definitely can't be created from a 1-byte blob); the code here just reduces DXIL blob size in the exe.
+static const BYTE g_ZstdGpuExecuteSequences128[1] = {};
+static const BYTE g_ZstdGpuExecuteSequences32[1] = {};
+static const BYTE g_ZstdGpuExecuteSequences_Wave64_cs66[1] = {};
+#else
+#include "ZstdGpuExecuteSequences128.h"
 #include "ZstdGpuExecuteSequences32.h"
+#include "ZstdGpuExecuteSequences64_Wave64_cs66.h"
+#endif
+
 #include "ZstdGpuFinaliseSequenceOffsets.h"
 #include "ZstdGpuInitFseTable.h"
 #include "ZstdGpuInitHuffmanTableAndDecompressLiterals.h"
@@ -596,6 +609,7 @@ static uint32_t zstdgpu_Count_SRTs_Stage(uint32_t stageIndex)
     ZSTDGPU_KERNEL(ExecuteSequences128                              ,   L"Execute Sequences 128")                                               \
     ZSTDGPU_KERNEL(ExecuteSequences64                               ,   L"Execute Sequences 64")                                                \
     ZSTDGPU_KERNEL(ExecuteSequences32                               ,   L"Execute Sequences 32")                                                \
+    ZSTDGPU_KERNEL(ExecuteSequences64_Wave64_cs66                   ,   L"Execute Sequences 64 Wave64 Forced")                                  \
     ZSTDGPU_KERNEL(FinaliseSequenceOffsets                          ,   L"Finalise Sequence Offsets")                                           \
     ZSTDGPU_KERNEL(InitFseTable                                     ,   L"Init Fse Table")                                                      \
     ZSTDGPU_KERNEL(InitHuffmanTableAndDecompressLiterals            ,   L"Init Huffman Table and Decompress Literals")                          \
@@ -621,7 +635,7 @@ typedef enum zstdgpu_CompiledShaderId
 typedef struct zstdgpu_CompiledShader
 {
     const void    *code;
-    const uint32_t size;
+    uint32_t       size;
     const wchar_t *desc;
 } zstdgpu_CompiledShader;
 
@@ -883,7 +897,7 @@ ZSTDGPU_ENUM(Status) zstdgpu_CreatePersistentContext(zstdgpu_PersistentContext *
         #define ZSTDGPU_KERNEL_GET(name) &kzstdgpu_CompiledShaders[kzstdgpu_CompiledShaderId_##name];
         #define ZSTDGPU_KERNEL_MAP(runtime, compiled) shader##runtime = ZSTDGPU_KERNEL_GET(compiled)
 
-        #define ZSTDGPU_KERNEL(name) const zstdgpu_CompiledShader *shader##name = ZSTDGPU_KERNEL_GET(name);
+        #define ZSTDGPU_KERNEL(name) const zstdgpu_CompiledShader *const shader##name = ZSTDGPU_KERNEL_GET(name);
             ZSTDGPU_RUNTIME_KERNEL_LIST_SHARED()
         #undef ZSTDGPU_KERNEL
 
@@ -901,6 +915,14 @@ ZSTDGPU_ENUM(Status) zstdgpu_CreatePersistentContext(zstdgpu_PersistentContext *
         D3D12_FEATURE_DATA_D3D12_OPTIONS1 featureOptions1;
         D3D12AID_CHECK(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS1, ZSTDGPU_WARN_DISABLE_MSVC(6001, &featureOptions1), sizeof(featureOptions1)));
         ZSTDGPU_ASSERT(featureOptions1.Int64ShaderOps); // 64-bit integer shader ops required for Forward_BitBuffer
+
+        D3D_SHADER_MODEL highestShaderModel;
+        {
+            D3D12_FEATURE_DATA_SHADER_MODEL shaderModel = {};
+            shaderModel.HighestShaderModel = D3D_SHADER_MODEL_6_6;
+            const HRESULT hr = device->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &shaderModel, sizeof(shaderModel));
+            highestShaderModel = SUCCEEDED(hr) ? shaderModel.HighestShaderModel : D3D_SHADER_MODEL_6_0;
+        }
 
         const LUID luid = device->GetAdapterLuid();
 
@@ -921,7 +943,17 @@ ZSTDGPU_ENUM(Status) zstdgpu_CreatePersistentContext(zstdgpu_PersistentContext *
             context->DecompressLiterals_StreamsPerGroup = kzstdgpu_StreamsPerGroup_DecompressLiterals_AMD;
             ZSTDGPU_KERNEL_MAP(DecompressSequences, DecompressSequences_SingleStream_ScalarFseLoad32);
             context->DecompressSequences_StreamsPerGroup = 1;
-            ZSTDGPU_KERNEL_MAP(ExecuteSequences, ExecuteSequences64);
+
+            if (featureOptions1.WaveLaneCountMin != 64 &&
+                featureOptions1.WaveLaneCountMax == 64 &&
+                highestShaderModel >= D3D_SHADER_MODEL_6_6)
+            {
+                ZSTDGPU_KERNEL_MAP(ExecuteSequences, ExecuteSequences64_Wave64_cs66);
+            }
+            else
+            {
+                ZSTDGPU_KERNEL_MAP(ExecuteSequences, ExecuteSequences64);
+            }
 
             context->executeIndirectWorkaround = (desc.DeviceId >= 0x7500);
         }
