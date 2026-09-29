@@ -3341,16 +3341,16 @@ ZSTDGPU_DECOMPRESS_SEQUENCES_SINGLE_STREAM_LDS_FSE_CACHE_LDS(0, DecompressSequen
 
 static void zstdgpu_ShaderEntry_DecompressSequences_SingleStream(ZSTDGPU_PARAM_INOUT(zstdgpu_DecompressSequences_SRT) srt, uint32_t groupId, uint32_t threadId, uint32_t tgSize)
 {
-#if kzstdgpu_DecompressSequences_SingleStream_NoLdsFseCache
     ZSTDGPU_UNUSED(tgSize);
-#endif
 
     const uint32_t seqStreamIdx = groupId;
     const uint32_t seqStreamCnt = srt.inCounters[0].Seq_Streams;
     const uint32_t cmpBlockCnt = srt.inCounters[0].Blocks_CMP;
 
     const zstdgpu_SeqAuxTableContext seqAuxTableCtx = zstdgpu_InitSeqAuxTable();
+    bool useVgprFseCache = false;
 
+    // NOTE: This condition must be group-uniform:
     if (seqStreamIdx >= seqStreamCnt)
         return;
 
@@ -3370,7 +3370,32 @@ static void zstdgpu_ShaderEntry_DecompressSequences_SingleStream(ZSTDGPU_PARAM_I
 
     const zstdgpu_OffsetAndSize dst = zstdgpu_GetSequenceStartAndCount(srt, seqStreamIdx, seqStreamCnt);
 
-#if !kzstdgpu_DecompressSequences_SingleStream_NoLdsFseCache
+#if VGPR_FSE_CACHE_WAVESIZE
+
+    useVgprFseCache = (WaveGetLaneCount() == VGPR_FSE_CACHE_WAVESIZE);
+    uint32_t fseTableVgprsOffs[kzstdgpu_FseElemMaxCount_Offs / VGPR_FSE_CACHE_WAVESIZE]; // [8] for wave32
+
+    if (useVgprFseCache)
+    {
+        #define ZSTDGPU_PRELOAD_FSE_INTO_VGPRS(name)                                                                \
+        {                                                                                                           \
+            const uint32_t fseAccuracyLog2 = srt.inFseInfos[seqRef.fse##name].fseProbCountAndAccuracyLog2 >> 8;     \
+            const uint32_t fseElemCount = 1u << fseAccuracyLog2;                                                    \
+            const uint32_t numBundles = fseElemCount / VGPR_FSE_CACHE_WAVESIZE;                                     \
+            uint32_t bundleId = 0;                                                                                  \
+            do                                                                                                      \
+            {                                                                                                       \
+                const uint32_t v = srt.inFseElems[start##name + bundleId * VGPR_FSE_CACHE_WAVESIZE + threadId];     \
+                fseTableVgprs##name[bundleId] = v;                                                                  \
+            } while (++bundleId < numBundles);                                                                      \
+        }
+    }
+
+    ZSTDGPU_PRELOAD_FSE_INTO_VGPRS(Offs)
+    #undef ZSTDGPU_PRELOAD_FSE_INTO_VGPRS
+
+#elif !kzstdgpu_DecompressSequences_SingleStream_NoLdsFseCache
+
     #include "zstdgpu_lds_decl_base.h"
     ZSTDGPU_DECOMPRESS_SEQUENCES_SINGLE_STREAM_LDS_FSE_CACHE_LDS(0, DecompressSequences_SingleStream_LdsFseCache);
     #include "zstdgpu_lds_decl_undef.h"
@@ -3393,14 +3418,15 @@ static void zstdgpu_ShaderEntry_DecompressSequences_SingleStream(ZSTDGPU_PARAM_I
     #if !defined(__XBOX_SCARLETT)
     GroupMemoryBarrierWithGroupSync();
     #endif
+
 #endif
 
     // The rest of the shader should be scalar. Deactivating unnecessary lanes may help.
     //
-    // However, SEQ_AUX_TABLE_USE_READLANE_UNIFORM_INDEX_WAVE32 requires all lanes active.
-    // With it, there seems to be mostly scalar instructions, and for wave32 (not wave64) the potential benefit of
-    // disabling lanes in this context is negligible.
-    ZSTDGPU_BRANCH if (!seqAuxTableCtx.useVgpr)
+    // However, SEQ_AUX_TABLE_USE_READLANE_UNIFORM_INDEX_WAVE32 and VGPR_FSE_CACHE requires all lanes active.
+    // With the former, there seems to be mostly scalar instructions, and for wave32 (not wave64) the potential
+    // benefit of disabling lanes in this context is negligible.
+    ZSTDGPU_BRANCH if (!seqAuxTableCtx.useVgpr && !useVgprFseCache)
     {
         if (threadId != 0)
         {
@@ -3432,12 +3458,19 @@ static void zstdgpu_ShaderEntry_DecompressSequences_SingleStream(ZSTDGPU_PARAM_I
     // NOTE: The single-stream decoder runs the entire FSE recurrence on one thread,
     // prefetching the next FSE elements before storing the current ones to overlap load latency.
     #if !kzstdgpu_DecompressSequences_SingleStream_NoLdsFseCache
+    #   if VGPR_FSE_CACHE_WAVESIZE
+    #       error "VGPR_FSE_CACHE not implemented with LdseFseCache, would like to not decl FsePackedOffs but can't force/know wavesize."
+    #   endif
     #   define ZSTDGPU_SS_FSE_LLEN(s) zstdgpu_LdsLoadU32(GS_FsePackedLLen + (s))
     #   define ZSTDGPU_SS_FSE_OFFS(s) zstdgpu_LdsLoadU32(GS_FsePackedOffs + (s))
     #   define ZSTDGPU_SS_FSE_MLEN(s) zstdgpu_LdsLoadU32(GS_FsePackedMLen + (s))
     #else
     #   define ZSTDGPU_SS_FSE_LLEN(s) srt.inFseElems[startLLen + (s)]
-    #   define ZSTDGPU_SS_FSE_OFFS(s) srt.inFseElems[startOffs + (s)]
+    #   if VGPR_FSE_CACHE_WAVESIZE
+    #       define ZSTDGPU_SS_FSE_OFFS(s) useVgprFseCache ? WaveReadLaneAt(fseTableVgprsOffs[uint(s) / VGPR_FSE_CACHE_WAVESIZE], uint(s) % VGPR_FSE_CACHE_WAVESIZE) : srt.inFseElems[startOffs + (s)];
+    #   else
+    #       define ZSTDGPU_SS_FSE_OFFS(s) srt.inFseElems[startOffs + (s)]
+    #   endif
     #   define ZSTDGPU_SS_FSE_MLEN(s) srt.inFseElems[startMLen + (s)]
     #endif
 
