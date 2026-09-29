@@ -3381,21 +3381,29 @@ static void zstdgpu_ShaderEntry_DecompressSequences_SingleStream(ZSTDGPU_PARAM_I
 
 #if VGPR_FSE_CACHE_WAVESIZE
 
-    uint32_t fseTableVgprsLLen[kzstdgpu_FseElemMaxCount_LLen / VGPR_FSE_CACHE_WAVESIZE]; // [16] for wave32
-    uint32_t fseTableVgprsMLen[kzstdgpu_FseElemMaxCount_MLen / VGPR_FSE_CACHE_WAVESIZE]; // [16] for wave32
-    uint32_t fseTableVgprsOffs[kzstdgpu_FseElemMaxCount_Offs / VGPR_FSE_CACHE_WAVESIZE]; // [8] for wave32
+    enum
+    {
+        VgprCapacityLLen = kzstdgpu_FseElemMaxCount_LLen / VGPR_FSE_CACHE_WAVESIZE, // [16] for wave32
+        VgprCapacityMLen = kzstdgpu_FseElemMaxCount_MLen / VGPR_FSE_CACHE_WAVESIZE, // [16] for wave32
+        VgprCapacityOffs = kzstdgpu_FseElemMaxCount_Offs / VGPR_FSE_CACHE_WAVESIZE, // [8] for wave32
+    };
 
+    uint32_t fseTableVgprsLLen[VgprCapacityLLen];
+    uint32_t fseTableVgprsMLen[VgprCapacityMLen];
+    uint32_t fseTableVgprsOffs[VgprCapacityOffs];
+
+    // Besides getting multiple loads in flight, [unroll] avoids m0 writes and v_movreld_b32 (note the 'd'):
     #define ZSTDGPU_PRELOAD_FSE_INTO_VGPRS(name)                                                                \
     {                                                                                                           \
         const uint32_t fseAccuracyLog2 = srt.inFseInfos[seqRef.fse##name].fseProbCountAndAccuracyLog2 >> 8;     \
         const uint32_t fseElemCount = 1u << fseAccuracyLog2;                                                    \
-        const uint32_t numBundles = fseElemCount / VGPR_FSE_CACHE_WAVESIZE;                                     \
-        uint32_t bundleId = 0;                                                                                  \
-        do                                                                                                      \
+        const uint32_t maxVgprId = (fseElemCount / VGPR_FSE_CACHE_WAVESIZE) - 1;                                \
+        [unroll] for (uint32_t vgprId = 0; vgprId < VgprCapacity##name; ++vgprId)                               \
         {                                                                                                       \
-            const uint32_t v = srt.inFseElems[start##name + bundleId * VGPR_FSE_CACHE_WAVESIZE + threadId];     \
-            fseTableVgprs##name[bundleId] = v;                                                                  \
-        } while (++bundleId < numBundles);                                                                      \
+            const uint32_t s = min(vgprId, maxVgprId);                                                          \
+            const uint32_t v = srt.inFseElems[start##name + s * VGPR_FSE_CACHE_WAVESIZE + threadId];            \
+            fseTableVgprs##name[vgprId] = v;                                                                    \
+        }                                                                                                       \
     }
 
     ZSTDGPU_PRELOAD_FSE_INTO_VGPRS(LLen)
