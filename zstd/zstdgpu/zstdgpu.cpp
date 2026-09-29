@@ -964,6 +964,8 @@ ZSTDGPU_ENUM(Status) zstdgpu_CreatePersistentContext(zstdgpu_PersistentContext *
         #undef ZSTDGPU_KERNEL_GET
         #undef ZSTDGPU_KERNEL_MAP
 
+        context->executeIndirectWorkaround = true; // helps some tools
+
         /** NOTE(pamartis): generate PipelineState / RootSignature initialisation through macro list */
         #define ZSTDGPU_KERNEL(name) \
             d3d12aid_ComputeRsPs_Create(&context->name, device, shader##name->code, shader##name->size);\
