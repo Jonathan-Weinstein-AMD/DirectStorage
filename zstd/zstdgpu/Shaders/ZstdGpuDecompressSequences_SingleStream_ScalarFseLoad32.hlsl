@@ -19,4 +19,5 @@
 #define kzstdgpu_DecompressSequences_SingleStream_NoLdsFseCache 1
 #define kzstdgpu_TgSizeX_DecompressSequences_SingleStream 32
 #define SEQ_CODE_INFO_USE_READLANE_UNIFORM_INDEX_WAVE32 1 // NOTE: "_PLUS" suffix removed
+#define VGPR_FSE_CACHE_WAVESIZE 32
 #include "ZstdGpuDecompressSequences_SingleStream.hlsli"
