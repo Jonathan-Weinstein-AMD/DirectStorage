@@ -3807,6 +3807,15 @@ static zstdgpu_Sequence zstdgpu_LoadSequence(ZSTDGPU_PARAM_INOUT(zstdgpu_Execute
     return seq;
 }
 
+static zstdgpu_Sequence zstdgpu_WaveReadLaneAt(ZSTDGPU_PARAM_IN(zstdgpu_Sequence) seqVgpr, uint32_t srcLaneId)
+{
+    zstdgpu_Sequence r;
+    r.mlen = WaveReadLaneAt(seqVgpr.mlen, srcLaneId);
+    r.llen = WaveReadLaneAt(seqVgpr.llen, srcLaneId);
+    r.offs = WaveReadLaneAt(seqVgpr.offs, srcLaneId);
+    return r;
+}
+
 static void zstdgpu_MemSet(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dstData,
                            ZSTDGPU_PARAM_INOUT(uint32_t) dstOfs,
                            uint32_t srcSym,
@@ -4040,33 +4049,35 @@ static void zstdgpu_ExecuteSequences_Lit(ZSTDGPU_PARAM_INOUT(zstdgpu_ExecuteSequ
 {
     ZSTDGPU_BRANCH if (seqIdx < seqEnd)
     {
-        // NOTE(pamartis): these are still uniform variables HLSL has no way of enforcing....
-        zstdgpu_Sequence seq = zstdgpu_LoadSequence(srt, seqIdx);
-
-        // NOTE: Process 2 sequences at a time to optimize execution.  Execution is not VGPR limited.
-        // Sequence k's match copy and k+1's literal copy are independent: different source buffers, non-overlapping destinations.
-        ZSTDGPU_LOOP for (; seqIdx + 1u < seqEnd; seqIdx += 2u)
+        const uint32_t laneCount = WaveGetLaneCount();
+        const uint32_t laneId = WaveGetLaneIndex();
+        ZSTDGPU_LOOP for (;;)
         {
-            const uint32_t nextSeqIdx = seqIdx + 1u;
-            zstdgpu_Sequence seq1 = zstdgpu_LoadSequence(srt, nextSeqIdx);
+            // Instead of laneCount scalar loads, do a single vector load and laneCount readlanes with scalar source lane index.
+            const zstdgpu_Sequence seqVgpr = zstdgpu_LoadSequence(srt, zstdgpu_MinU32(seqIdx + laneId, seqEnd - 1));
 
-            // Prefetch the sequence after the pair so its metadata load hides behind the four copies below.
-            const uint32_t prefetchSeqIdx = seqIdx + 2u;
-            zstdgpu_Sequence seqNext = seq1;
-            ZSTDGPU_BRANCH if (prefetchSeqIdx < seqEnd)
+            // NOTE: Process 2 sequences at a time to optimize execution.  Execution is not VGPR limited.
+            // Sequence k's match copy and k+1's literal copy are independent: different source buffers, non-overlapping destinations.
+            const uint32_t jEnd = zstdgpu_MinU32((seqEnd - seqIdx) & ~1, laneCount); // laneCount should be even already
+            ZSTDGPU_LOOP for (uint32_t j = 0; j < jEnd; j += 2)
             {
-                seqNext = zstdgpu_LoadSequence(srt, prefetchSeqIdx);
+                const zstdgpu_Sequence seq  = zstdgpu_WaveReadLaneAt(seqVgpr, j);
+                const zstdgpu_Sequence seq1 = zstdgpu_WaveReadLaneAt(seqVgpr, j + 1);
+                zstdgpu_ExecuteSequencePair_FusedCopy(srt.inoutUnCompressedFramesData, dstOfs, litBuf, litOfs, seq, seq1, dstEnd);
             }
+            seqIdx += jEnd;
 
-            zstdgpu_ExecuteSequencePair_FusedCopy(srt.inoutUnCompressedFramesData, dstOfs, litBuf, litOfs, seq, seq1, dstEnd);
-
-            seq = seqNext;
-        }
-
-        // Tail: handle the final sequence when the sequence count in this frame is odd.
-        ZSTDGPU_BRANCH if (seqIdx < seqEnd)
-        {
-            zstdgpu_ExecuteSequence_FusedCopy(srt.inoutUnCompressedFramesData, dstOfs, litBuf, litOfs, seq, dstEnd);
+            ZSTDGPU_BRANCH if (jEnd < laneCount)
+            {
+                // Tail: handle the final sequence when the sequence count in this frame is odd.
+                ZSTDGPU_BRANCH if (seqIdx + 1 == seqEnd)
+                {
+                    const zstdgpu_Sequence seq = zstdgpu_WaveReadLaneAt(seqVgpr, jEnd);
+                    zstdgpu_ExecuteSequence_FusedCopy(srt.inoutUnCompressedFramesData, dstOfs, litBuf, litOfs, seq, dstEnd);
+                    seqIdx++;
+                }
+                break;
+            }
         }
     }
 
