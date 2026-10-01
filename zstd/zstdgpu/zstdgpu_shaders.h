@@ -3438,7 +3438,9 @@ static void zstdgpu_ShaderEntry_DecompressSequences_SingleStream(ZSTDGPU_PARAM_I
 
 #endif
 
-#if !SEQ_CODE_INFO_USE_READLANE_UNIFORM_INDEX_WAVE32 && !VGPR_FSE_CACHE_WAVESIZE
+#define ZSTDGPU_SS_WAVE_LOOP 1
+
+#if !SEQ_CODE_INFO_USE_READLANE_UNIFORM_INDEX_WAVE32 && !VGPR_FSE_CACHE_WAVESIZE && !ZSTDGPU_SS_WAVE_LOOP
     // The rest of the shader should be scalar. Ideally the compiler should emit mostly scalar instructions,
     // but this may help it, or deactivate unnecessary lanes for instructions with no scalar counterpart (LDS loads).
     if (threadId != 0)
@@ -3488,6 +3490,55 @@ static void zstdgpu_ShaderEntry_DecompressSequences_SingleStream(ZSTDGPU_PARAM_I
     uint32_t packedFseElemOffs = ZSTDGPU_SS_FSE_OFFS(stateOffs);
     uint32_t packedFseElemMLen = ZSTDGPU_SS_FSE_MLEN(stateMLen);
 
+#if ZSTDGPU_SS_WAVE_LOOP
+    // Prevent the compiler from unrolling and spilling SGPRs.
+    const uint32_t opaqueWaveSize = zstdgpu_MinU32(WaveGetLaneCount(), (cmpBlockCnt >> 24) - 1);
+    const uint32_t laneId = WaveGetLaneIndex();
+
+    // NOTE: strictly greater (>) so that there is always another seq after this chunked loop,
+    // making the isLastSeq logic in this chunked loop easier.
+    ZSTDGPU_LOOP for (; (outputEnd - i) > opaqueWaveSize; i += opaqueWaveSize)
+    {
+        uint32_t v_llen = 0;
+        uint32_t v_offs = 0;
+        uint32_t v_mlen = 0;
+
+        uint32_t j = 0;
+        ZSTDGPU_LOOP do
+        {
+            uint32_t llen = 0, offs = 0, mlen = 0;
+            zstdgpu_ReadSeqBitsAndDecompress(bitBuffer,
+                zstdgpu_FseElem_Symbol(packedFseElemLLen),
+                zstdgpu_FseElem_Symbol(packedFseElemOffs),
+                zstdgpu_FseElem_Symbol(packedFseElemMLen),
+                llen, offs, mlen, false, seqCodeInfoCtx
+            );
+
+            zstdgpu_ReadExtraBitsAndUpdateState(bitBuffer, packedFseElemLLen, packedFseElemOffs, packedFseElemMLen, stateLLen, stateOffs, stateMLen);
+            packedFseElemLLen = ZSTDGPU_SS_FSE_LLEN(stateLLen);
+            packedFseElemOffs = ZSTDGPU_SS_FSE_OFFS(stateOffs);
+            packedFseElemMLen = ZSTDGPU_SS_FSE_MLEN(stateMLen);
+
+            offs = zstdgpu_UpdatePreviousAndRecomputeIncoming(offset1, offset2, offset3, offs, llen);
+
+            ZSTDGPU_FLATTEN if (laneId == j)
+            {
+                v_llen = llen;
+                v_mlen = mlen;
+                v_offs = offs;
+            }
+        } while (++j < opaqueWaveSize);
+
+        /*totalSize += llen + mlen;*/
+        totalMLen += WaveActiveSum(v_mlen);
+
+        srt.inoutDecompressedSequenceLLen[i + laneId] = v_llen;
+        srt.inoutDecompressedSequenceMLen[i + laneId] = v_mlen;
+        srt.inoutDecompressedSequenceOffs[i + laneId] = v_offs;
+    }
+#endif
+
+    // Handle tail 1-32 sequences:
     for (;;)
     {
         uint32_t llen = 0, offs = 0, mlen = 0;
