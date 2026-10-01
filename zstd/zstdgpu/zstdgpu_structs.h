@@ -226,6 +226,14 @@
 #   endif
 #endif
 
+#ifndef ZSTDGPU_UNROLL
+#   ifdef __hlsl_dx_compiler
+#      define ZSTDGPU_UNROLL [unroll]
+#   else
+#      define ZSTDGPU_UNROLL
+#   endif
+#endif
+
 static const uint32_t kzstdgpu_MaxCount_ThreadGroupsPerDimensionLog2 = 15;
 
 static const uint32_t kzstdgpu_MaxCount_BlockSizeBits   = 17u;
@@ -879,6 +887,119 @@ static uint32_t zstdgpu_UpdatePreviousAndRecomputeIncoming(ZSTDGPU_PARAM_INOUT(u
     offset2 = offsetAdj >= 2u ? offset1 : offset2;
     offset1 = encodedOffset;
     return encodedOffset;
+}
+
+// Wave-parallel form of `zstdgpu_UpdatePreviousAndRecomputeIncoming`.
+// Every sequence is a transform (offset1, offset2, offset3) -> (offset1', offset2', offset3') where each output slot is either:
+//  - a constant (a non-repeat offset), or
+//  - an input slot minus a delta (repeat offset shuffles and the "offset1 - 1" case)
+// This form is closed under composition, so a wave of sequences is resolved with an inclusive prefix scan (Hillis-Steele) of transforms.
+// A transform is stored as `src` (2 bits per output slot: 0 -> constant, 1..3 -> input slot index + 1) and three values `v1, v2, v3`
+// (the constant or the subtracted delta, wrapping uint32_t arithmetic matches the sequential subtractions).
+static const uint32_t kzstdgpu_SeqOffsetTransform_SrcConst    = 0u;
+static const uint32_t kzstdgpu_SeqOffsetTransform_SrcIdentity = 1u | (2u << 2u) | (3u << 4u);
+
+static inline uint32_t zstdgpu_SeqOffsetTransform_GetSrc(uint32_t src, uint32_t slot)
+{
+    return (src >> (slot * 2u)) & 3u;
+}
+
+static inline uint32_t zstdgpu_SeqOffsetTransform_Select(uint32_t v1, uint32_t v2, uint32_t v3, uint32_t slot)
+{
+    return slot == 0u ? v1 : (slot == 1u ? v2 : v3);
+}
+
+static inline void zstdgpu_SeqOffsetTransform_Init(ZSTDGPU_PARAM_INOUT(uint32_t) src,
+                                                   ZSTDGPU_PARAM_INOUT(uint32_t) v1,
+                                                   ZSTDGPU_PARAM_INOUT(uint32_t) v2,
+                                                   ZSTDGPU_PARAM_INOUT(uint32_t) v3,
+                                                   uint32_t offset,
+                                                   uint32_t llen)
+{
+    ZSTDGPU_ASSERT_MSG(offset < 0x20000000, "Incoming 'offset'(0x%08x) overflow into 'repeat' offset bit", offset);
+
+    // NOTE: mirrors `zstdgpu_UpdatePreviousAndRecomputeIncoming`
+    const bool     isRep     = offset <= 3u;
+    const uint32_t offsetAdj = offset + ((isRep && llen == 0u) ? 1u : 0u);
+    const uint32_t repSrc1   = (offsetAdj < 3u) ? (offsetAdj < 2u ? 1u : 2u)
+                                                : (offsetAdj < 4u ? 3u : 1u);
+    const uint32_t src1 = isRep ? repSrc1 : kzstdgpu_SeqOffsetTransform_SrcConst;
+    const uint32_t src2 = offsetAdj >= 2u ? 1u : 2u;
+    const uint32_t src3 = offsetAdj >= 3u ? 2u : 3u;
+
+    src = src1 | (src2 << 2u) | (src3 << 4u);
+    v1  = isRep ? (offsetAdj >= 4u ? 1u : 0u) : offset;
+    v2  = 0u;
+    v3  = 0u;
+}
+
+// NOTE: computes one output slot of "B after A", given B's slot source `bSrcSlot` and value `bVal`.
+static inline uint32_t zstdgpu_SeqOffsetTransform_ComposeSlot(uint32_t aSrc, uint32_t aV1, uint32_t aV2, uint32_t aV3,
+                                                              uint32_t bSrcSlot,
+                                                              ZSTDGPU_PARAM_INOUT(uint32_t) bVal)
+{
+    if (bSrcSlot == kzstdgpu_SeqOffsetTransform_SrcConst)
+        return kzstdgpu_SeqOffsetTransform_SrcConst;
+
+    const uint32_t j     = bSrcSlot - 1u;
+    const uint32_t aSrcJ = zstdgpu_SeqOffsetTransform_GetSrc(aSrc, j);
+    const uint32_t aValJ = zstdgpu_SeqOffsetTransform_Select(aV1, aV2, aV3, j);
+    // constant `c` minus `d` -> constant `c - d`, input slot minus `d'` minus `d` -> input slot minus `d' + d`
+    bVal = (aSrcJ == kzstdgpu_SeqOffsetTransform_SrcConst) ? (aValJ - bVal) : (aValJ + bVal);
+    return aSrcJ;
+}
+
+static inline uint32_t zstdgpu_SeqOffsetTransform_ApplySlot(uint32_t srcSlot, uint32_t val, uint32_t offset1, uint32_t offset2, uint32_t offset3)
+{
+    return (srcSlot == kzstdgpu_SeqOffsetTransform_SrcConst) ? val : (zstdgpu_SeqOffsetTransform_Select(offset1, offset2, offset3, srcSlot - 1u) - val);
+}
+
+// NOTE: Wave-wide equivalent of calling `zstdgpu_UpdatePreviousAndRecomputeIncoming` sequentially for lanes [0, waveSize).
+//  - `offset1`, `offset2`, `offset3` are wave-uniform on input and output.
+//  - `offset` and `llen` are per-lane, lanes >= `waveSize` are ignored.
+//  - `waveSize` must be wave-uniform and <= WaveGetLaneCount().
+// Returns per-lane encoded offset.
+static uint32_t zstdgpu_WaveUpdatePreviousAndRecomputeIncoming(ZSTDGPU_PARAM_INOUT(uint32_t) offset1,
+                                                               ZSTDGPU_PARAM_INOUT(uint32_t) offset2,
+                                                               ZSTDGPU_PARAM_INOUT(uint32_t) offset3,
+                                                               uint32_t offset,
+                                                               uint32_t llen,
+                                                               uint32_t laneId,
+                                                               uint32_t waveSize)
+{
+    uint32_t src = kzstdgpu_SeqOffsetTransform_SrcIdentity, v1 = 0u, v2 = 0u, v3 = 0u;
+    if (laneId < waveSize)
+    {
+        zstdgpu_SeqOffsetTransform_Init(src, v1, v2, v3, offset, llen);
+    }
+
+    // Inclusive prefix scan (Hillis-Steele): lane `i` ends up with transform of sequences [0, i] applied in order.
+    // Driver compiler should hopefull unroll this:
+    ZSTDGPU_UNROLL for (uint32_t k = 1u; k < waveSize; k <<= 1u)
+    {
+        const uint32_t readLane = laneId >= k ? laneId - k : laneId;
+        const uint32_t aSrc = WaveReadLaneAt(src, readLane);
+        const uint32_t aV1  = WaveReadLaneAt(v1, readLane);
+        const uint32_t aV2  = WaveReadLaneAt(v2, readLane);
+        const uint32_t aV3  = WaveReadLaneAt(v3, readLane);
+        if (laneId >= k)
+        {
+            const uint32_t s1 = zstdgpu_SeqOffsetTransform_ComposeSlot(aSrc, aV1, aV2, aV3, zstdgpu_SeqOffsetTransform_GetSrc(src, 0u), v1);
+            const uint32_t s2 = zstdgpu_SeqOffsetTransform_ComposeSlot(aSrc, aV1, aV2, aV3, zstdgpu_SeqOffsetTransform_GetSrc(src, 1u), v2);
+            const uint32_t s3 = zstdgpu_SeqOffsetTransform_ComposeSlot(aSrc, aV1, aV2, aV3, zstdgpu_SeqOffsetTransform_GetSrc(src, 2u), v3);
+            src = s1 | (s2 << 2u) | (s3 << 4u);
+        }
+    }
+
+    const uint32_t laneOffset1 = zstdgpu_SeqOffsetTransform_ApplySlot(zstdgpu_SeqOffsetTransform_GetSrc(src, 0u), v1, offset1, offset2, offset3);
+    const uint32_t laneOffset2 = zstdgpu_SeqOffsetTransform_ApplySlot(zstdgpu_SeqOffsetTransform_GetSrc(src, 1u), v2, offset1, offset2, offset3);
+    const uint32_t laneOffset3 = zstdgpu_SeqOffsetTransform_ApplySlot(zstdgpu_SeqOffsetTransform_GetSrc(src, 2u), v3, offset1, offset2, offset3);
+
+    const uint32_t lastLane = waveSize - 1u;
+    offset1 = WaveReadLaneAt(laneOffset1, lastLane);
+    offset2 = WaveReadLaneAt(laneOffset2, lastLane);
+    offset3 = WaveReadLaneAt(laneOffset3, lastLane);
+    return laneOffset1;
 }
 
 static inline void zstdgpu_DecodeSeqRepeatOffsetsAndApplyPreviousOffsets(ZSTDGPU_PARAM_INOUT(uint32_t) offset1,
