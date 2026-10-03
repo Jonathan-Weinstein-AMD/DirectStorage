@@ -803,6 +803,9 @@ static void passBind(const char *slot, const char *resource)
 #define ZSTDGPU_SRT_BUF_RO_STRUCT_ALIAS(type, name, postfix)  addBuf(kAccessRO, kKindStruct, 0, #type, #type, #name, #postfix);
 #define ZSTDGPU_SRT_BUF_RW_STRUCT_ALIAS(type, name, postfix)  addBuf(kAccessRW, kKindStruct, 0, #type, #type, #name, #postfix);
 
+#define ZSTDGPU_SRT_BUF_RO_BYTE_ALIAS(name, postfix)          addBuf(kAccessRO, kKindByte, 0, "uint32_t", "uint32_t", #name, #postfix);
+#define ZSTDGPU_SRT_BUF_RW_BYTE_ALIAS(name, postfix)          addBuf(kAccessRW, kKindByte, 0, "uint32_t", "uint32_t", #name, #postfix);
+
 #define ZSTDGPU_SRT_CONST(type, name)                         addConst(kConstCpu, #type, #name);
 #define ZSTDGPU_SRT_CONST_INDIRECT(type, name)                addConst(kConstIndirect, #type, #name);
 #define ZSTDGPU_SRT_CONST_INLINE(type, name)                  addConst(kConstInline, #type, #name);
@@ -1403,7 +1406,7 @@ static void emitBindGroupEntryPush(StrBuilder *b, const Entry *e)
 
     if (kKindByte == e->kind)
     {
-        sb_Fmt(b, "    zstdgpu_Srt_PushRawBufferSrv(cpuDest, descSize, device, b.%s, resInfo.%s_ByteSize);\n", name, name);
+        sb_Fmt(b, "    zstdgpu_Srt_PushRawBuffer%s(cpuDest, descSize, device, b.%s, resInfo.%s_ByteSize);\n", view, name, name);
     }
     else if (kKindTyped == e->kind)
     {

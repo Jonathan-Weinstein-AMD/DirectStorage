@@ -343,7 +343,7 @@ static D3D12_GPU_DESCRIPTOR_HANDLE zstdgpu_Srt_InitBindGroup_LiteralDwords(zstdg
     const D3D12_GPU_DESCRIPTOR_HANDLE gpuDest  = { gpuStart.ptr + (UINT64)srts.heapOffset * descSize };
     D3D12_CPU_DESCRIPTOR_HANDLE       cpuDest  = { cpuStart.ptr + (SIZE_T)srts.heapOffset * descSize };
 
-    zstdgpu_Srt_PushStructBufferUav(cpuDest, descSize, device, b.DecompressedLiterals, resInfo.DecompressedLiterals_ByteSize, sizeof(uint32_t));
+    zstdgpu_Srt_PushRawBufferUav(cpuDest, descSize, device, b.DecompressedLiterals, resInfo.DecompressedLiterals_ByteSize);
 
     srts.heapOffset += 1;
     return gpuDest;

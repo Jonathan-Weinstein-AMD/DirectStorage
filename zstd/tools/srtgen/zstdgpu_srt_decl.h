@@ -77,7 +77,7 @@ ZSTDGPU_SRT_BIND_GROUP_BEGIN(LiteralStreams, Stage2)
 ZSTDGPU_SRT_BIND_GROUP_END()
 
 ZSTDGPU_SRT_BIND_GROUP_BEGIN(LiteralDwords, Stage2)
-    ZSTDGPU_SRT_BUF_RW_STRUCT_ALIAS(uint32_t                , DecompressedLiterals, Dwords  )
+    ZSTDGPU_SRT_BUF_RW_BYTE_ALIAS(                            DecompressedLiterals, Dwords  )
 ZSTDGPU_SRT_BIND_GROUP_END()
 
 ZSTDGPU_SRT_BIND_GROUP_BEGIN(HuffmanWeights, Stage2)

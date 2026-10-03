@@ -159,11 +159,19 @@
 #   endif
 #endif
 
-#ifndef ZSTDGPU_RO_BYTE_BUFFER
+#ifndef ZSTDGPU_RO_RAW_BUFFER
 #   ifdef __hlsl_dx_compiler
 #       define ZSTDGPU_RO_RAW_BUFFER(type) ByteAddressBuffer /* no type, it's opaquue in HLSL side */
 #   else
 #       define ZSTDGPU_RO_RAW_BUFFER(type) const type *
+#   endif
+#endif
+
+#ifndef ZSTDGPU_RW_RAW_BUFFER
+#   ifdef __hlsl_dx_compiler
+#       define ZSTDGPU_RW_RAW_BUFFER(type) RWByteAddressBuffer /* no type, it's opaquue in HLSL side */
+#   else
+#       define ZSTDGPU_RW_RAW_BUFFER(type) type *
 #   endif
 #endif
 
@@ -552,6 +560,17 @@ static inline uint64_t zstdgpu_ByteOffsetLoadU64(ZSTDGPU_RO_RAW_BUFFER(uint32_t)
 #else
     const uint32_t* p32 = reinterpret_cast<const uint32_t*>(reinterpret_cast<const char*>(buffer) + offset);
     return p32[0] | (uint64_t(p32[1]) << 32);
+#endif
+}
+
+static inline void zstdgpu_ByteOffsetStoreX2(ZSTDGPU_RW_RAW_BUFFER(uint32_t) buffer, uint32_t offset, uint32_t lo, uint32_t hi)
+{
+#ifdef __hlsl_dx_compiler
+    buffer.Store2(offset, uint2(lo, hi));
+#else
+    uint32_t* p32 = reinterpret_cast<uint32_t*>(reinterpret_cast<char*>(buffer) + offset);
+    p32[0] = lo;
+    p32[1] = hi;
 #endif
 }
 

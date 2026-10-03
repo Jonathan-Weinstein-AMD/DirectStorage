@@ -2700,7 +2700,7 @@ static void zstdgpu_PreInitHuffmanTableToLds(ZSTDGPU_RO_TYPED_BUFFER(uint32_t, u
 static inline void zstdgpu_DecompressHuffmanCompressedLiterals(ZSTDGPU_RO_RAW_BUFFER(uint32_t) CompressedData,
                                                                ZSTDGPU_RO_BUFFER(zstdgpu_LitStreamInfo) LitRefs,
                                                                ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) DecompressedLiterals,
-                                                               ZSTDGPU_RW_BUFFER(uint32_t) DecompressedLiteralsAsDwords,
+                                                               ZSTDGPU_RW_RAW_BUFFER(uint32_t) DecompressedLiteralsAsDwords,
                                                                ZSTDGPU_PARAM_LDS_IN(uint32_t) GS_HuffmanTable,
                                                                uint32_t groupId,
                                                                uint32_t threadId,
@@ -2886,7 +2886,7 @@ static inline void zstdgpu_SampleHuffmanSymbolAndBitcnt(ZSTDGPU_PARAM_INOUT(uint
 void zstdgpu_DecompressHuffmanCompressedLiterals(ZSTDGPU_RO_RAW_BUFFER(uint32_t) CompressedData,
                                                  ZSTDGPU_RO_BUFFER(zstdgpu_LitStreamInfo) LitRefs,
                                                  ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) DecompressedLiterals,
-                                                 ZSTDGPU_RW_BUFFER(uint32_t) DecompressedLiteralsAsDwords,
+                                                 ZSTDGPU_RW_RAW_BUFFER(uint32_t) DecompressedLiteralsAsDwords,
                                                  ZSTDGPU_PARAM_LDS_IN(uint32_t) GS_HuffmanTable,
                                                  uint32_t groupId,
                                                  uint32_t threadId,
@@ -2914,8 +2914,8 @@ void zstdgpu_DecompressHuffmanCompressedLiterals(ZSTDGPU_RO_RAW_BUFFER(uint32_t)
 
         zstdgpu_LitStreamInfo compressedLiteral = LitRefs[literalStreamId];
         const uint32_t byteAlignedEnd  = compressedLiteral.dst.offs + compressedLiteral.dst.size;
-        const uint32_t dwordAlignedEnd = zstdgpu_MaxU32(compressedLiteral.dst.offs, byteAlignedEnd & ~3u);
-        const uint32_t dwordAlignedBeg = zstdgpu_MinU32((compressedLiteral.dst.offs + 3u) & ~3u, dwordAlignedEnd);
+        const uint32_t qwordAlignedEnd = zstdgpu_MaxU32(compressedLiteral.dst.offs, byteAlignedEnd & ~7u);
+        const uint32_t qwordAlignedBeg = zstdgpu_MinU32((compressedLiteral.dst.offs + 7u) & ~7u, qwordAlignedEnd);
 
         zstdgpu_HuffmanStream stream;
         zstdgpu_HuffmanStream_InitWithSegment(stream, CompressedData, compressedLiteral.src, bitsMax);
@@ -2924,60 +2924,79 @@ void zstdgpu_DecompressHuffmanCompressedLiterals(ZSTDGPU_RO_RAW_BUFFER(uint32_t)
         uint32_t bitcnt = 0;
         uint32_t state = 0;
 
-        // Head bytes (up to 3) before the first dword-aligned output address.
+        // Head bytes (up to 7) before the first qword-aligned output address.
         // See @last_peek / lane-fetch-accumulation notes in zstdgpu_HuffmanStream: a fetch loads 64 bits
         // and each decode consumes <= 11, so at most one zstdgpu_HuffmanStream_ConditionalFetch is needed
         // per 4 zstdgpu_HuffmanStream_GetFromFetched.
         uint32_t byteCursor = compressedLiteral.dst.offs;
-        ZSTDGPU_LOOP while (byteCursor < dwordAlignedBeg)
+        ZSTDGPU_LOOP while (byteCursor < qwordAlignedBeg)
         {
             state = zstdgpu_HuffmanStream_GetFromFetched(stream);
+            zstdgpu_HuffmanStream_ConditionalFetch(stream);
             zstdgpu_SampleHuffmanSymbolAndBitcnt(symbol, bitcnt, state, GS_HuffmanTable);
             zstdgpu_TypedStoreU8(DecompressedLiterals, byteCursor ++, symbol);
             zstdgpu_HuffmanStream_Consume(stream, bitcnt);
-            zstdgpu_HuffmanStream_ConditionalFetch(stream);
         }
 
-        // Interior: whole dwords (4 decoded symbols each) written as coalesced 32-bit stores
-        uint32_t dwordIdx = dwordAlignedBeg >> 2;
-        const uint32_t dwordIdxEnd = dwordAlignedEnd >> 2;
-        ZSTDGPU_LOOP for (; dwordIdx < dwordIdxEnd; ++dwordIdx)
+        // Interior: whole qwords (4x2 decoded symbols each) written as coalesced 64-bit stores
+        ZSTDGPU_LOOP for (; byteCursor < qwordAlignedEnd; byteCursor += 8)
         {
-            uint32_t dword = 0;
+            uint32_t dword0 = 0;
+            uint32_t dword1 = 0;
 
             state = zstdgpu_HuffmanStream_GetFromFetched(stream);
             zstdgpu_SampleHuffmanSymbolAndBitcnt(symbol, bitcnt, state, GS_HuffmanTable);
-            dword |= symbol;
+            dword0 |= symbol;
             zstdgpu_HuffmanStream_Consume(stream, bitcnt);
 
             state = zstdgpu_HuffmanStream_GetFromFetched(stream);
             zstdgpu_SampleHuffmanSymbolAndBitcnt(symbol, bitcnt, state, GS_HuffmanTable);
-            dword |= symbol << 8;
+            dword0 |= symbol << 8;
             zstdgpu_HuffmanStream_Consume(stream, bitcnt);
 
             state = zstdgpu_HuffmanStream_GetFromFetched(stream);
             zstdgpu_SampleHuffmanSymbolAndBitcnt(symbol, bitcnt, state, GS_HuffmanTable);
-            dword |= symbol << 16;
+            dword0 |= symbol << 16;
             zstdgpu_HuffmanStream_Consume(stream, bitcnt);
 
             state = zstdgpu_HuffmanStream_GetFromFetched(stream);
-            zstdgpu_HuffmanStream_ConditionalFetch(stream); // place to maximize instructions overlapping the fetch
+            zstdgpu_HuffmanStream_ConditionalFetch(stream); /* place to maximize instructions overlapping the fetch */
             zstdgpu_SampleHuffmanSymbolAndBitcnt(symbol, bitcnt, state, GS_HuffmanTable);
-            dword |= symbol << 24;
+            dword0 |= symbol << 24;
             zstdgpu_HuffmanStream_Consume(stream, bitcnt);
 
-            DecompressedLiteralsAsDwords[dwordIdx] = dword;
+            state = zstdgpu_HuffmanStream_GetFromFetched(stream);
+            zstdgpu_SampleHuffmanSymbolAndBitcnt(symbol, bitcnt, state, GS_HuffmanTable);
+            dword1 |= symbol;
+            zstdgpu_HuffmanStream_Consume(stream, bitcnt);
+
+            state = zstdgpu_HuffmanStream_GetFromFetched(stream);
+            zstdgpu_SampleHuffmanSymbolAndBitcnt(symbol, bitcnt, state, GS_HuffmanTable);
+            dword1 |= symbol << 8;
+            zstdgpu_HuffmanStream_Consume(stream, bitcnt);
+
+            state = zstdgpu_HuffmanStream_GetFromFetched(stream);
+            zstdgpu_SampleHuffmanSymbolAndBitcnt(symbol, bitcnt, state, GS_HuffmanTable);
+            dword1 |= symbol << 16;
+            zstdgpu_HuffmanStream_Consume(stream, bitcnt);
+
+            state = zstdgpu_HuffmanStream_GetFromFetched(stream);
+            zstdgpu_HuffmanStream_ConditionalFetch(stream); /* place to maximize instructions overlapping the fetch */
+            zstdgpu_SampleHuffmanSymbolAndBitcnt(symbol, bitcnt, state, GS_HuffmanTable);
+            dword1 |= symbol << 24;
+            zstdgpu_HuffmanStream_Consume(stream, bitcnt);
+
+            zstdgpu_ByteOffsetStoreX2(DecompressedLiteralsAsDwords, byteCursor, dword0, dword1);
         }
 
-        // Tail bytes (up to 3) after the last dword-aligned output address
-        byteCursor = dwordAlignedEnd;
+        // Tail bytes (up to 7) after the last qword-aligned output address
         ZSTDGPU_LOOP while (byteCursor < byteAlignedEnd)
         {
             state = zstdgpu_HuffmanStream_GetFromFetched(stream);
+            zstdgpu_HuffmanStream_ConditionalFetch(stream);
             zstdgpu_SampleHuffmanSymbolAndBitcnt(symbol, bitcnt, state, GS_HuffmanTable);
             zstdgpu_TypedStoreU8(DecompressedLiterals, byteCursor ++, symbol);
             zstdgpu_HuffmanStream_Consume(stream, bitcnt);
-            zstdgpu_HuffmanStream_ConditionalFetch(stream);
         }
     }
 }

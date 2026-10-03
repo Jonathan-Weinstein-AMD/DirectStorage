@@ -19,7 +19,7 @@
 
 #define ZSTDGPU_SRT_RS_BIND_GROUP_LiteralDwords "DescriptorTable(UAV(u0, space=3, numDescriptors=1))"
 
-ZSTDGPU_RW_BUFFER(uint32_t) ZstdInOutDecompressedLiterals_Dwords    : register(u0, space3);
+ZSTDGPU_RW_RAW_BUFFER(uint32_t) ZstdInOutDecompressedLiterals_Dwords    : register(u0, space3);
 
 template<typename T>
 static void zstdgpu_Srt_FillBindGroup_LiteralDwords(ZSTDGPU_PARAM_INOUT(T) srt)
