@@ -3055,23 +3055,23 @@ static const uint32_t SEQ_MLEN_EXTRA_BITS_AND_BASELINES[SEQ_MLEN_BASE_TABLE_END]
 struct zstdgpu_SeqBaseTableContext
 {
     bool useVgpr;
-#if SEQ_BASE_TABLE_USE_READLANE_UNIFORM_INDEX_WAVE32
     // .x = low 32 array elements, .y = high 32 array elements
     uint32_t2 llenVgpr;
     uint32_t2 mlenVgpr;
-#endif
 };
 
 // This must be in top-level control-flow and before any early per-thread returns.
 static zstdgpu_SeqBaseTableContext zstdgpu_InitSeqBaseTable()
 {
-    zstdgpu_SeqBaseTableContext ctx;
+    zstdgpu_SeqBaseTableContext ctx; // Add ZSTDGPU_ZERO_STRUCT(T) ?
     ctx.useVgpr = false;
+    ctx.llenVgpr.x = 0;
+    ctx.llenVgpr.y = 0;
+    ctx.mlenVgpr.x = 0;
+    ctx.mlenVgpr.y = 0;
 
 #if SEQ_BASE_TABLE_USE_READLANE_UNIFORM_INDEX_WAVE32 // multistream variants should not set this
     ctx.useVgpr = (WaveGetLaneCount() == 32);
-    ctx.llenVgpr = uint32_t2(0, 0);
-    ctx.mlenVgpr = uint32_t2(0, 0);
     if (ctx.useVgpr)
     {
         const uint32_t laneIdx = WaveGetLaneIndex();
@@ -3104,23 +3104,14 @@ static uint32_t zstdgpu_ConcatenatedWaveReadLaneAt(uint32_t2 v2, uint32_t flatId
 }
 #endif
 
-static void zstdgpu_ReadSeqBitsAndDecompress(ZSTDGPU_PARAM_INOUT(zstdgpu_Backward_BitBuffer_V0) bitBuffer,
-                                             ZSTDGPU_PARAM_IN(uint32_t) symbolLLen,
-                                             ZSTDGPU_PARAM_IN(uint32_t) symbolOffs,
-                                             ZSTDGPU_PARAM_IN(uint32_t) symbolMLen,
-                                             ZSTDGPU_PARAM_INOUT(uint32_t) outLLen,
-                                             ZSTDGPU_PARAM_INOUT(uint32_t) outOffs,
-                                             ZSTDGPU_PARAM_INOUT(uint32_t) outMLen,
-                                             bool skipOffsRefill,
-                                             ZSTDGPU_PARAM_IN(zstdgpu_SeqBaseTableContext) ctx)
+static void zstdgpu_ReadSeqBaseTables(ZSTDGPU_PARAM_IN(uint32_t) symbolLLen,
+                                      ZSTDGPU_PARAM_IN(uint32_t) symbolMLen,
+                                      ZSTDGPU_PARAM_INOUT(uint32_t) llenInfo,
+                                      ZSTDGPU_PARAM_INOUT(uint32_t) mlenInfo,
+                                      ZSTDGPU_PARAM_IN(zstdgpu_SeqBaseTableContext) ctx)
 {
     ZSTDGPU_ASSERT(symbolLLen < SEQ_LLEN_BASE_TABLE_END);
     ZSTDGPU_ASSERT(symbolMLen < SEQ_MLEN_BASE_TABLE_END);
-    ZSTDGPU_ASSERT(symbolOffs <= (kzstdgpu_SeqOffset_Encoded_BitBase - 1));
-    const uint32_t symbolOffs_Clamped = zstdgpu_MinU32(symbolOffs, kzstdgpu_SeqOffset_Encoded_BitBase - 1);
-
-    uint32_t llenInfo;
-    uint32_t mlenInfo;
 
 #if SEQ_BASE_TABLE_USE_READLANE_UNIFORM_INDEX_WAVE32
     if (ctx.useVgpr)
@@ -3135,6 +3126,19 @@ static void zstdgpu_ReadSeqBitsAndDecompress(ZSTDGPU_PARAM_INOUT(zstdgpu_Backwar
         llenInfo = SEQ_LLEN_EXTRA_BITS_AND_BASELINES[symbolLLen];
         mlenInfo = SEQ_MLEN_EXTRA_BITS_AND_BASELINES[symbolMLen];
     }
+}
+
+static void zstdgpu_ReadSeqBitsAndDecompress_Part2(ZSTDGPU_PARAM_INOUT(zstdgpu_Backward_BitBuffer_V0) bitBuffer,
+                                                   ZSTDGPU_PARAM_IN(uint32_t) llenInfo,
+                                                   ZSTDGPU_PARAM_IN(uint32_t) symbolOffs,
+                                                   ZSTDGPU_PARAM_IN(uint32_t) mlenInfo,
+                                                   ZSTDGPU_PARAM_INOUT(uint32_t) outLLen,
+                                                   ZSTDGPU_PARAM_INOUT(uint32_t) outOffs,
+                                                   ZSTDGPU_PARAM_INOUT(uint32_t) outMLen,
+                                                   bool skipOffsRefill)
+{
+    ZSTDGPU_ASSERT(symbolOffs <= (kzstdgpu_SeqOffset_Encoded_BitBase - 1));
+    const uint32_t symbolOffs_Clamped = zstdgpu_MinU32(symbolOffs, kzstdgpu_SeqOffset_Encoded_BitBase - 1);
 
     const uint32_t bitcntLLen = llenInfo & 31;
     const uint32_t bitcntOffs = symbolOffs_Clamped;
@@ -3159,6 +3163,22 @@ static void zstdgpu_ReadSeqBitsAndDecompress(ZSTDGPU_PARAM_INOUT(zstdgpu_Backwar
     outOffs = (1u << symbolOffs_Clamped) + bitsOffs;
     outMLen = (mlenInfo >> 5) + bitsMLen;
     outLLen = (llenInfo >> 5) + bitsLLen;
+}
+
+static void zstdgpu_ReadSeqBitsAndDecompress(ZSTDGPU_PARAM_INOUT(zstdgpu_Backward_BitBuffer_V0) bitBuffer,
+                                             ZSTDGPU_PARAM_IN(uint32_t) symbolLLen,
+                                             ZSTDGPU_PARAM_IN(uint32_t) symbolOffs,
+                                             ZSTDGPU_PARAM_IN(uint32_t) symbolMLen,
+                                             ZSTDGPU_PARAM_INOUT(uint32_t) outLLen,
+                                             ZSTDGPU_PARAM_INOUT(uint32_t) outOffs,
+                                             ZSTDGPU_PARAM_INOUT(uint32_t) outMLen,
+                                             bool skipOffsRefill,
+                                             ZSTDGPU_PARAM_IN(zstdgpu_SeqBaseTableContext) ctx)
+{
+    uint32_t llenInfo;
+    uint32_t mlenInfo;
+    zstdgpu_ReadSeqBaseTables(symbolLLen, symbolMLen, llenInfo, mlenInfo, ctx);
+    zstdgpu_ReadSeqBitsAndDecompress_Part2(bitBuffer, llenInfo, symbolOffs, mlenInfo, outLLen, outOffs, outMLen, skipOffsRefill);
 }
 
 static void zstdgpu_ReadExtraBitsAndUpdateState(ZSTDGPU_PARAM_INOUT(zstdgpu_Backward_BitBuffer_V0) bitBuffer,
