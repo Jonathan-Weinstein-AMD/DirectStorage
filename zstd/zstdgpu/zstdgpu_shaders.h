@@ -3070,26 +3070,38 @@ static zstdgpu_SeqBaseTableContext zstdgpu_InitSeqBaseTable()
     ctx.mlenVgpr.x = 0;
     ctx.mlenVgpr.y = 0;
 
-#if SEQ_BASE_TABLE_USE_READLANE_UNIFORM_INDEX_WAVE32 || SEQ_BASE_TABLE_USE_NONUNIFORM_SRC_LANE
+#if SEQ_BASE_TABLE_USE_READLANE_UNIFORM_INDEX_WAVE32
     ctx.useVgpr = (WaveGetLaneCount() == 32);
-    if (ctx.useVgpr)
+#elif SEQ_BASE_TABLE_USE_NONUNIFORM_SRC_LANE
+    ctx.useVgpr = (WaveGetLaneCount() == 32) ||
+                  (WaveGetLaneCount() == 64);
+#endif
+
+    ZSTDGPU_BRANCH if (ctx.useVgpr)
     {
         const uint32_t laneIdx = WaveGetLaneIndex();
 
-        ctx.llenVgpr.x = SEQ_LLEN_EXTRA_BITS_AND_BASELINES[laneIdx];
-        ctx.mlenVgpr.x = SEQ_MLEN_EXTRA_BITS_AND_BASELINES[laneIdx];
-
-        if (laneIdx < SEQ_LLEN_BASE_TABLE_END - 32)
+        ZSTDGPU_BRANCH if (WaveGetLaneCount() == 32)
         {
-            ctx.llenVgpr.y = SEQ_LLEN_EXTRA_BITS_AND_BASELINES[laneIdx + 32];
+            ctx.llenVgpr.x = SEQ_LLEN_EXTRA_BITS_AND_BASELINES[laneIdx];
+            ctx.mlenVgpr.x = SEQ_MLEN_EXTRA_BITS_AND_BASELINES[laneIdx];
+
+            if (laneIdx < SEQ_LLEN_BASE_TABLE_END - 32)
+            {
+                ctx.llenVgpr.y = SEQ_LLEN_EXTRA_BITS_AND_BASELINES[laneIdx + 32];
+            }
+
+            if (laneIdx < SEQ_MLEN_BASE_TABLE_END - 32)
+            {
+                ctx.mlenVgpr.y = SEQ_MLEN_EXTRA_BITS_AND_BASELINES[laneIdx + 32];
+            }
         }
-
-        if (laneIdx < SEQ_MLEN_BASE_TABLE_END - 32)
+        else // wave64
         {
-            ctx.mlenVgpr.y = SEQ_MLEN_EXTRA_BITS_AND_BASELINES[laneIdx + 32];
+            ctx.llenVgpr.x = SEQ_LLEN_EXTRA_BITS_AND_BASELINES[zstdgpu_MinU32(laneIdx, SEQ_LLEN_BASE_TABLE_END - 1)];
+            ctx.mlenVgpr.x = SEQ_MLEN_EXTRA_BITS_AND_BASELINES[zstdgpu_MinU32(laneIdx, SEQ_MLEN_BASE_TABLE_END - 1)];
         }
     }
-#endif
     return ctx;
 }
 
@@ -3101,8 +3113,15 @@ static uint32_t zstdgpu_ConcatenatedWaveReadLaneAt(uint32_t2 v2, uint32_t flatId
     uint32_t v = flatIdx < 32 ? v2.x : v2.y;    // This "v_cndmask_b32" needs all lanes active.
     return WaveReadLaneAt(v, flatIdx & 31);     // Undefined in HLSL to read from an inactive lane.
 #else
-    uint32_t2 shuf = WaveReadLaneAt(v2, flatIdx & 31); // wave32 versionn
-    return flatIdx < 32 ? shuf.x : shuf.y;
+    ZSTDGPU_BRANCH if (WaveGetLaneCount() == 32)
+    {
+        uint32_t2 shuf = WaveReadLaneAt(v2, flatIdx & 31); // wave32 versionn
+        return flatIdx < 32 ? shuf.x : shuf.y;
+    }
+    else
+    {
+        return WaveReadLaneAt(v2.x, flatIdx);
+    }
 #endif
 }
 #endif
@@ -3658,6 +3677,7 @@ static void zstdgpu_ShaderEntry_DecompressSequences_MultiStream_LdsOutCache(ZSTD
             const uint32_t seqIdxBatchBeg = seqIdx;
             const uint32_t seqIdxBatchEnd = zstdgpu_MinU32(seqIdx + cacheDwordsPerStream, seqIdxEnd);
 
+            // TODO: how to not do this if seqBaseTableCtx.useVgpr is false (Intel)?
             while (WaveActiveAnyTrue(seqIdx < seqIdxBatchEnd))
             {
                 // zstdgpu_ReadSeqBaseTables needs all lanes active
