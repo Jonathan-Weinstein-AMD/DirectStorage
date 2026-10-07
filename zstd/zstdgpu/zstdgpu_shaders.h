@@ -3567,8 +3567,7 @@ static void zstdgpu_ShaderEntry_DecompressSequences_MultiStream_LdsOutCache(ZSTD
     const uint32_t seqStreamCnt = srt.inCounters[0].Seq_Streams;
     const uint32_t seqStreamBeg = groupId * streamsPerGroup;
 
-    zstdgpu_SeqBaseTableContext seqBaseTableCtx = zstdgpu_InitSeqBaseTable();
-    seqBaseTableCtx.useVgpr = false; // TODO: try later
+    const zstdgpu_SeqBaseTableContext seqBaseTableCtx = zstdgpu_InitSeqBaseTable();
 
     const uint32_t seqStreamCntInGroup = zstdgpu_MinU32(seqStreamCnt - seqStreamBeg, streamsPerGroup);
 

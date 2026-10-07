@@ -43,6 +43,8 @@
 #   error 'kzstdgpu_DecompressSequences_ThreadsPerStream' must be a power of 2
 #endif
 
+#define SEQ_BASE_TABLE_USE_NONUNIFORM_SRC_LANE 1
+
 #include "../zstdgpu_shaders.h"
 
 #include "../srt_headers/ZstdGpuSrt_DecompressSequences.h"
