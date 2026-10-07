@@ -3070,7 +3070,7 @@ static zstdgpu_SeqBaseTableContext zstdgpu_InitSeqBaseTable()
     ctx.mlenVgpr.x = 0;
     ctx.mlenVgpr.y = 0;
 
-#if SEQ_BASE_TABLE_USE_READLANE_UNIFORM_INDEX_WAVE32 // multistream variants should not set this
+#if SEQ_BASE_TABLE_USE_READLANE_UNIFORM_INDEX_WAVE32 || SEQ_BASE_TABLE_USE_NONUNIFORM_SRC_LANE
     ctx.useVgpr = (WaveGetLaneCount() == 32);
     if (ctx.useVgpr)
     {
@@ -3093,14 +3093,17 @@ static zstdgpu_SeqBaseTableContext zstdgpu_InitSeqBaseTable()
     return ctx;
 }
 
-#if SEQ_BASE_TABLE_USE_READLANE_UNIFORM_INDEX_WAVE32
+#if SEQ_BASE_TABLE_USE_READLANE_UNIFORM_INDEX_WAVE32 || SEQ_BASE_TABLE_USE_NONUNIFORM_SRC_LANE
 static uint32_t zstdgpu_ConcatenatedWaveReadLaneAt(uint32_t2 v2, uint32_t flatIdx)
 {
+#if SEQ_BASE_TABLE_USE_READLANE_UNIFORM_INDEX_WAVE32
     // Since flatIdx should be uniform across the wave, we can do a select before WaveReadLaneAt.
-    // Even if that order was changed, DecompressSequences_MultiStream_LdsOutCache cannot work
-    // with this VGPR method, since all lanes may not be active in every loop iteration.
     uint32_t v = flatIdx < 32 ? v2.x : v2.y;    // This "v_cndmask_b32" needs all lanes active.
     return WaveReadLaneAt(v, flatIdx & 31);     // Undefined in HLSL to read from an inactive lane.
+#else
+    uint32_t2 shuf = WaveReadLaneAt(v2, flatIdx & 31); // wave32 versionn
+    return flatIdx < 32 ? shuf.x : shuf.y;
+#endif
 }
 #endif
 
@@ -3113,7 +3116,7 @@ static void zstdgpu_ReadSeqBaseTables(ZSTDGPU_PARAM_IN(uint32_t) symbolLLen,
     ZSTDGPU_ASSERT(symbolLLen < SEQ_LLEN_BASE_TABLE_END);
     ZSTDGPU_ASSERT(symbolMLen < SEQ_MLEN_BASE_TABLE_END);
 
-#if SEQ_BASE_TABLE_USE_READLANE_UNIFORM_INDEX_WAVE32
+#if SEQ_BASE_TABLE_USE_READLANE_UNIFORM_INDEX_WAVE32 || SEQ_BASE_TABLE_USE_NONUNIFORM_SRC_LANE
     if (ctx.useVgpr)
     {
         llenInfo = zstdgpu_ConcatenatedWaveReadLaneAt(ctx.llenVgpr, symbolLLen);
@@ -3564,7 +3567,8 @@ static void zstdgpu_ShaderEntry_DecompressSequences_MultiStream_LdsOutCache(ZSTD
     const uint32_t seqStreamCnt = srt.inCounters[0].Seq_Streams;
     const uint32_t seqStreamBeg = groupId * streamsPerGroup;
 
-    const zstdgpu_SeqBaseTableContext seqBaseTableCtx = zstdgpu_InitSeqBaseTable();
+    zstdgpu_SeqBaseTableContext seqBaseTableCtx = zstdgpu_InitSeqBaseTable();
+    seqBaseTableCtx.useVgpr = false; // TODO: try later
 
     const uint32_t seqStreamCntInGroup = zstdgpu_MinU32(seqStreamCnt - seqStreamBeg, streamsPerGroup);
 
@@ -3636,45 +3640,60 @@ static void zstdgpu_ShaderEntry_DecompressSequences_MultiStream_LdsOutCache(ZSTD
         // threads that get replicated data
         const uint32_t seqIdxEnd = seqRefDst.offs + (seqStreamActive ? seqRefDst.size : 0);
 
+        uint32_t fseElemLLen = 0;
+        uint32_t fseElemOffs = 0;
+        uint32_t fseElemMLen = 0;
+        if (seqStreamActive)
+        {
+            stateLLen += startLLen;
+            stateOffs += startOffs;
+            stateMLen += startMLen;
+
+            fseElemLLen = srt.inFseElems[stateLLen];
+            fseElemOffs = srt.inFseElems[stateOffs];
+            fseElemMLen = srt.inFseElems[stateMLen];
+        }
+
         do
         {
             const uint32_t seqIdxBatchBeg = seqIdx;
             const uint32_t seqIdxBatchEnd = zstdgpu_MinU32(seqIdx + cacheDwordsPerStream, seqIdxEnd);
 
-            // Decode phase: each active thread decodes up to cacheDwordsPerStream sequences into its LDS cache
-            for (; seqIdx < seqIdxBatchEnd; )
+            while (WaveActiveAnyTrue(seqIdx < seqIdxBatchEnd))
             {
-                stateLLen += startLLen;
-                stateOffs += startOffs;
-                stateMLen += startMLen;
+                // zstdgpu_ReadSeqBaseTables needs all lanes active
+                uint32_t llenInfo;
+                uint32_t mlenInfo;
+                zstdgpu_ReadSeqBaseTables(zstdgpu_FseElem_Symbol(fseElemLLen), zstdgpu_FseElem_Symbol(fseElemMLen), llenInfo, mlenInfo, seqBaseTableCtx);
 
-                const uint32_t fseElemLLen = srt.inFseElems[stateLLen];
-                const uint32_t fseElemOffs = srt.inFseElems[stateOffs];
-                const uint32_t fseElemMLen = srt.inFseElems[stateMLen];
-
-                uint32_t llen = 0, offs = 0, mlen = 0;
-                zstdgpu_ReadSeqBitsAndDecompress(
-                    bitBuffer,
-                    zstdgpu_FseElem_Symbol(fseElemLLen),
-                    zstdgpu_FseElem_Symbol(fseElemOffs),
-                    zstdgpu_FseElem_Symbol(fseElemMLen),
-                    llen, offs, mlen, false, seqBaseTableCtx
-                );
-                offs = zstdgpu_UpdatePreviousAndRecomputeIncoming(offset1, offset2, offset3, offs, llen);
-
-                totalMLen += mlen;
-
-                const uint32_t seqIdxInBatch = seqIdx - seqIdxBatchBeg;
-
-                //
-                const uint32_t seqIdxInCache = (seqIdxInBatch & ~kStoreCacheBankMask) + ((seqIdxInBatch + seqStreamIdxInGroup) & kStoreCacheBankMask);
-                zstdgpu_LdsStoreU32(GS_LLenCache + storeCacheThreadOffset + seqIdxInCache, llen);
-                zstdgpu_LdsStoreU32(GS_MLenCache + storeCacheThreadOffset + seqIdxInCache, mlen);
-                zstdgpu_LdsStoreU32(GS_OffsCache + storeCacheThreadOffset + seqIdxInCache, offs);
-
-                if (++seqIdx < seqIdxEnd)
+                // Decode phase: each active thread decodes up to cacheDwordsPerStream sequences into its LDS cache
+                if (seqIdx < seqIdxBatchEnd)
                 {
-                    zstdgpu_ReadExtraBitsAndUpdateState(bitBuffer, fseElemLLen, fseElemOffs, fseElemMLen, stateLLen, stateOffs, stateMLen);
+                    uint32_t llen = 0, offs = 0, mlen = 0;
+                    zstdgpu_ReadSeqBitsAndDecompress_Part2(bitBuffer, llenInfo, zstdgpu_FseElem_Symbol(fseElemOffs), mlenInfo, llen, offs, mlen, false);
+                    offs = zstdgpu_UpdatePreviousAndRecomputeIncoming(offset1, offset2, offset3, offs, llen);
+
+                    totalMLen += mlen;
+
+                    const uint32_t seqIdxInBatch = seqIdx - seqIdxBatchBeg;
+
+                    const uint32_t seqIdxInCache = (seqIdxInBatch & ~kStoreCacheBankMask) + ((seqIdxInBatch + seqStreamIdxInGroup) & kStoreCacheBankMask);
+                    zstdgpu_LdsStoreU32(GS_LLenCache + storeCacheThreadOffset + seqIdxInCache, llen);
+                    zstdgpu_LdsStoreU32(GS_MLenCache + storeCacheThreadOffset + seqIdxInCache, mlen);
+                    zstdgpu_LdsStoreU32(GS_OffsCache + storeCacheThreadOffset + seqIdxInCache, offs);
+
+                    if (++seqIdx < seqIdxEnd)
+                    {
+                        zstdgpu_ReadExtraBitsAndUpdateState(bitBuffer, fseElemLLen, fseElemOffs, fseElemMLen, stateLLen, stateOffs, stateMLen);
+
+                        stateLLen += startLLen;
+                        stateOffs += startOffs;
+                        stateMLen += startMLen;
+
+                        fseElemLLen = srt.inFseElems[stateLLen];
+                        fseElemOffs = srt.inFseElems[stateOffs];
+                        fseElemMLen = srt.inFseElems[stateMLen];
+                    }
                 }
             }
 

@@ -919,8 +919,8 @@ ZSTDGPU_ENUM(Status) zstdgpu_CreatePersistentContext(zstdgpu_PersistentContext *
             // The fused literal kernel decodes fewer streams per group on AMD PC parts; the
             // width is a runtime root constant, so no per-vendor shader variant is needed.
             context->DecompressLiterals_StreamsPerGroup = kzstdgpu_StreamsPerGroup_DecompressLiterals_AMD;
-            ZSTDGPU_KERNEL_MAP(DecompressSequences, DecompressSequences_SingleStream_ScalarFseLoad32);
-            context->DecompressSequences_StreamsPerGroup = 1;
+            ZSTDGPU_KERNEL_MAP(DecompressSequences, DecompressSequences_MultiStream_4_LdsOutCache_32);
+            context->DecompressSequences_StreamsPerGroup = kzstdgpu_TgSizeX_DecompressSequences / 4u;
             ZSTDGPU_KERNEL_MAP(ExecuteSequences, ExecuteSequences64);
 
             context->executeIndirectWorkaround = (desc.DeviceId >= 0x7500);
