@@ -3976,47 +3976,64 @@ static void zstdgpu_ExecuteSequencePair_FusedCopy(ZSTDGPU_RW_TYPED_BUFFER(uint32
 
     // NOTE: This function is a specialized version of zstdgpu_ExecuteSequence_FusedCopy that works on a pair of sequences
 
-    // Fast path: attempt to coalesce the two sequences into a single wave-cooperative store.
-    ZSTDGPU_BRANCH if (combined <= laneCount
+    ZSTDGPU_BRANCH if (combined <= (laneCount << 1u)
                        && seq0.offs >= total0
                        && seq1.offs >= combined
                        && dstOfs + combined <= dstEnd)
     {
-        ZSTDGPU_BRANCH if (laneId < combined)
-        {
-            const bool     inSeq0 = laneId < total0;
-            const uint32_t local  = inSeq0 ? laneId : (laneId - total0);
-            const uint32_t llenL  = inSeq0 ? seq0.llen : seq1.llen;
-            const uint32_t litIdx   = inSeq0 ? (litOfs + laneId) : (litOfs + seq0.llen + local);
-            const uint32_t off      = inSeq0 ? seq0.offs : seq1.offs;
-            const uint32_t litVal   = litBuf[litIdx];
-            const uint32_t matchVal = dstData[dstOfs + laneId - off];
-            const uint32_t value    = (local < llenL) ? litVal : matchVal;
-            zstdgpu_TypedStoreU8(dstData, dstOfs + laneId, value);
+        // The zstdgpu_TypedStoreU8 is not part of BODY. If zstdgpu_TypedStoreU8 would be interleaved,
+        // the (RDNA) compiler won't group pairs of loads/stores and form `s_clause`s because it'll assume the
+        // second load from dstData depends on the first store to dstData.
+        //
+        // I'm seeing s_clause happen with this formulation, but the shader runs about the same for my zst :(
+        #define BODY(b, storeOffset, storeValue, oob)                                       \
+        {                                                                                   \
+            const bool     inSeq0 = b < total0;                                             \
+            const uint32_t local  = inSeq0 ? b : (b - total0);                              \
+            const uint32_t llenL  = inSeq0 ? seq0.llen : seq1.llen;                         \
+            const uint32_t litIdx = inSeq0 ? (litOfs + b) : (litOfs + seq0.llen + local);   \
+            const uint32_t off    = inSeq0 ? seq0.offs : seq1.offs;                         \
+            const uint32_t litVal   = litBuf[litIdx | oob];                                 \
+            const uint32_t matchVal = dstData[(dstOfs + b - off) | oob];                    \
+            const uint32_t value    = (local < llenL) ? litVal : matchVal;                  \
+            storeOffset = (dstOfs + b) | oob;                                               \
+            storeValue  = value;                                                            \
         }
+
+        // Fast path: attempt to coalesce the two sequences into a single wave-cooperative store.
+        ZSTDGPU_BRANCH if (combined <= laneCount)
+        {
+            ZSTDGPU_BRANCH if (laneId < combined)
+            {
+                uint32_t storeOffset, storeValue;
+                BODY(laneId, storeOffset, storeValue, 0);
+                zstdgpu_TypedStoreU8(dstData, storeOffset, storeValue);
+            }
+        }
+        // Second tier: coalesce the two sequences into a two wave-cooperative stores when the combined span is up to twice the lane count.
+        else
+        {
+            uint32_t storeOffset, storeValue;
+            BODY(laneId, storeOffset, storeValue, 0);
+            const uint32_t b1Unclamped = laneCount + laneId;
+        #if 0
+            const uint32_t b1 = zstdgpu_MinU32(b1Unclamped, combined - 1);
+            const uint32_t oob = 0;
+        #else
+            // OOB index is possibly faster.
+            const uint32_t b1 = b1Unclamped;
+            const uint32_t oob = b1Unclamped < combined ? 0 : 0xFFFFFFFFu;
+        #endif
+            uint32_t storeOffset1, storeValue1;
+            BODY(b1, storeOffset1, storeValue1, oob);
+            zstdgpu_TypedStoreU8(dstData, storeOffset, storeValue);
+            zstdgpu_TypedStoreU8(dstData, storeOffset1, storeValue1);
+        }
+
         dstOfs += combined;
         litOfs += seq0.llen + seq1.llen;
-    }
-    // Second tier: attempt to coalesce the two sequences into a single wave-cooperative store when the combined span is up to twice the lane count.
-    else if (combined <= (laneCount << 1u)
-             && seq0.offs >= total0
-             && seq1.offs >= combined
-             && dstOfs + combined <= dstEnd)
-    {
-        ZSTDGPU_LOOP for (uint32_t b = laneId; b < combined; b += laneCount)
-        {
-            const bool     inSeq0 = b < total0;
-            const uint32_t local  = inSeq0 ? b : (b - total0);
-            const uint32_t llenL  = inSeq0 ? seq0.llen : seq1.llen;
-            const uint32_t litIdx = inSeq0 ? (litOfs + b) : (litOfs + seq0.llen + local);
-            const uint32_t off    = inSeq0 ? seq0.offs : seq1.offs;
-            const uint32_t litVal   = litBuf[litIdx];
-            const uint32_t matchVal = dstData[dstOfs + b - off];
-            const uint32_t value    = (local < llenL) ? litVal : matchVal;
-            zstdgpu_TypedStoreU8(dstData, dstOfs + b, value);
-        }
-        dstOfs += combined;
-        litOfs += seq0.llen + seq1.llen;
+
+        #undef BODY
     }
     else
     {
