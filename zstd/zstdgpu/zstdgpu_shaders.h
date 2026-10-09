@@ -36,16 +36,6 @@ static void zstdgpu_TypedStoreU8(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) inou
 #endif
 }
 
-static void zstdgpu_TypedStoreU16(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint16_t) inoutBuffer, uint32_t index, uint32_t value)
-{
-#ifdef __hlsl_dx_compiler
-    inoutBuffer[index] = value;
-#else
-    ZSTDGPU_ASSERT(value < (1u << 16u));
-    inoutBuffer[index] = (uint16_t)value;
-#endif
-}
-
 #ifdef __hlsl_dx_compiler
 static uint32_t zstdgpu_ConvertTo32BitGroupId(uint32_t2 groupId, uint32_t tgOffset)
 {
@@ -732,7 +722,7 @@ static void zstdgpu_ShaderEntry_InitResources(ZSTDGPU_PARAM_INOUT(zstdgpu_InitRe
 
     ZSTDGPU_FOR_WORK_ITEMS(i, kzstdgpu_FseDefaultProbCount_LLen, threadId, kzstdgpu_TgSizeX_InitCounters)
     {
-        srt.inoutFseProbs[dstStart + i] = srt.inFseProbsDefault[srcStart + i];
+        srt.inoutFseProbs[dstStart + i] = kzstdgpuFseProbsDefault[srcStart + i];
     }
 
     dstStart += dstTableStride;
@@ -740,7 +730,7 @@ static void zstdgpu_ShaderEntry_InitResources(ZSTDGPU_PARAM_INOUT(zstdgpu_InitRe
 
     ZSTDGPU_FOR_WORK_ITEMS(i, kzstdgpu_FseDefaultProbCount_Offs, threadId, kzstdgpu_TgSizeX_InitCounters)
     {
-        srt.inoutFseProbs[dstStart + i] = srt.inFseProbsDefault[srcStart + i];
+        srt.inoutFseProbs[dstStart + i] = kzstdgpuFseProbsDefault[srcStart + i];
     }
 
     dstStart += dstTableStride;
@@ -748,13 +738,13 @@ static void zstdgpu_ShaderEntry_InitResources(ZSTDGPU_PARAM_INOUT(zstdgpu_InitRe
 
     ZSTDGPU_FOR_WORK_ITEMS(i, kzstdgpu_FseDefaultProbCount_MLen, threadId, kzstdgpu_TgSizeX_InitCounters)
     {
-        srt.inoutFseProbs[dstStart + i] = srt.inFseProbsDefault[srcStart + i];
+        srt.inoutFseProbs[dstStart + i] = kzstdgpuFseProbsDefault[srcStart + i];
     }
 }
 
 static void zstdgpu_ParseFseHeader(ZSTDGPU_PARAM_INOUT(zstdgpu_Forward_BitBuffer) buffer,
                                    ZSTDGPU_RW_BUFFER(zstdgpu_FseInfo) outFseInfo,
-                                   ZSTDGPU_RW_TYPED_BUFFER(int32_t, int16_t) outFseProb,
+                                   ZSTDGPU_RW_BUFFER(int16_t) outFseProb, // AMC: typed to struct
                                    uint32_t outFseTableIndex,
                                    uint32_t accuracyLog2Max)
 {
@@ -811,11 +801,8 @@ static void zstdgpu_ParseFseHeader(ZSTDGPU_PARAM_INOUT(zstdgpu_Forward_BitBuffer
         // cumulated distribution, it counts as one."
         remain -= prob < 0 ? -prob : prob;
 
-#ifdef __hlsl_dx_compiler
-        outFseProb[outFseProbTableOffset + symbol] = prob;
-#else
         outFseProb[outFseProbTableOffset + symbol] = (int16_t)prob;
-#endif
+
         symbol += 1;
 
         // "When a symbol has a probability of zero, it is followed by a 2-bits

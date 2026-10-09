@@ -20,6 +20,9 @@
 
 [RootSignature(ZSTDGPU_SRT_RS_ExecuteSequences)]
 [numthreads(MAX_COPY_SIZE, 1, 1)]
+#if FORCED_WAVE_SIZE // AMC
+[wavesize(FORCED_WAVE_SIZE)]
+#endif
 void main(uint groupId : SV_GroupId, uint i : SV_GroupThreadId)
 {
     // Retire redundant waves (just recomputing the same result) when the GPU wave is narrower than the group.

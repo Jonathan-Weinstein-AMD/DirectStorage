@@ -12,6 +12,23 @@
 
 #pragma once
 
+// AMC: don't upload this, use embedded static const array in shader
+static const int16_t kzstdgpuFseProbsDefault[36 + 29 + 53] =
+{
+    // SEQ_LITERAL_LENGTH_DEFAULT_DIST[36]
+    4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1,  1,  2,  2,
+    2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1, 1, 1, 1, -1, -1, -1, -1,
+
+    // SEQ_OFFSET_DEFAULT_DIST[29]
+    1, 1, 1, 1, 1, 1, 2, 2, 2, 1,  1,  1,  1,  1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1,
+
+    // SEQ_MATCH_LENGTH_DEFAULT_DIST[53]
+    1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1,  1,  1,  1,  1,  1,  1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  1,  1,  1,  1,  1,  1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1
+};
+
 struct zstdgpu_OffsetAndSize
 {
     uint32_t offs;

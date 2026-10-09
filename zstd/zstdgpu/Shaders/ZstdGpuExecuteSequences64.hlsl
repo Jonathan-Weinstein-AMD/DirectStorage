@@ -14,5 +14,6 @@
  * Author(s):   Pavel Martishevsky (pamartis@microsoft.com)
  */
 
-#define MAX_COPY_SIZE 64
+#define MAX_COPY_SIZE    64
+#define FORCED_WAVE_SIZE 64 // AMC
 #include "ZstdGpuExecuteSequences.hlsli"

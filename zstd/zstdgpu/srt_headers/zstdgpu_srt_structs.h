@@ -201,7 +201,7 @@ typedef struct zstdgpu_FinaliseSequenceOffsets_SRT
 
 typedef struct zstdgpu_InitFseTable_SRT
 {
-    ZSTDGPU_RO_TYPED_BUFFER(int32_t, int16_t)               inFseProbs;
+    ZSTDGPU_RO_BUFFER(int16_t)                              inFseProbs;
     ZSTDGPU_RW_BUFFER(uint32_t)                             inoutFseElems;
     ZSTDGPU_RO_BUFFER(zstdgpu_FseInfo)                      inFseInfos;
     ZSTDGPU_RO_BUFFER(zstdgpu_Counters)                     inCounters;
@@ -260,8 +260,7 @@ typedef struct zstdgpu_MemsetMemcpy_SRT
 
 typedef struct zstdgpu_InitResources_SRT
 {
-    ZSTDGPU_RO_TYPED_BUFFER(int32_t, int16_t)               inFseProbsDefault;
-    ZSTDGPU_RW_TYPED_BUFFER(int32_t, int16_t)               inoutFseProbs;
+    ZSTDGPU_RW_BUFFER(int16_t)                              inoutFseProbs;
     ZSTDGPU_RW_BUFFER(zstdgpu_FseInfo)                      inoutFseInfos;
     ZSTDGPU_RW_BUFFER(uint32_t)                             inoutFseElems;
     ZSTDGPU_RW_BUFFER(zstdgpu_Counters)                     inoutCounters;
@@ -285,7 +284,7 @@ typedef struct zstdgpu_ParseCompressedBlocks_SRT
     ZSTDGPU_RW_BUFFER(uint32_t)                             inoutPerSeqStreamSeqStart;
     ZSTDGPU_RW_BUFFER_GLC(uint32_t)                         inoutSeqCountPrefixLookback;
     ZSTDGPU_RW_BUFFER_GLC(uint32_t)                         inoutBlockSeqCountPrefixLookback;
-    ZSTDGPU_RW_TYPED_BUFFER(int32_t, int16_t)               inoutFseProbs;
+    ZSTDGPU_RW_BUFFER(int16_t)                              inoutFseProbs;
     ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t)              inoutDecompressedHuffmanWeightCount;
     ZSTDGPU_RW_BUFFER_GLC(uint32_t)                         inoutLitStreamCountPrefixLookback;
     ZSTDGPU_RW_BUFFER(uint32_t)                             inoutHufWIdToHufLitId;

@@ -412,22 +412,6 @@ static void saveFile(const wchar_t *fileName, const void *data, uint32_t dataSiz
  *
  **********************************************************************************************************************/
 
-static const int16_t kzstdgpuFseProbsDefault[] =
-{
-    // SEQ_LITERAL_LENGTH_DEFAULT_DIST
-    4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1,  1,  2,  2,
-    2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1, 1, 1, 1, -1, -1, -1, -1,
-
-    // SEQ_OFFSET_DEFAULT_DIST
-    1, 1, 1, 1, 1, 1, 2, 2, 2, 1,  1,  1,  1,  1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1,
-
-    // SEQ_MATCH_LENGTH_DEFAULT_DIST
-    1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1,  1,  1,  1,  1,  1,  1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  1,  1,  1,  1,  1,  1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1
-};
-
 #include "zstdgpu_resources.h"
 #include "srt_headers/ZstdGpuSrt_InitResources.h"
 #include "srt_headers/ZstdGpuSrt_ParseFrames.h"
@@ -797,7 +781,6 @@ static void zstdgpu_Validate_GpuDecompressOnCpu(zstdgpu_ResourceDataCpu & zstdCp
         memcpy((char *)zstdCpu.CompressedData + zstdFrameRefs[i].offs, (char *)zstdGpuCompressedData + zstdFrameRefs[i].offs, zstdFrameRefs[i].size);
     }
     memcpy(zstdCpu.FramesRefs, zstdFrameRefs, sizeof(zstdgpu_OffsetAndSize) * zstdFrameCount);
-    memcpy(zstdCpu.FseProbsDefault, kzstdgpuFseProbsDefault, sizeof(kzstdgpuFseProbsDefault));
 
     #define CNTRS(name) zstdCpu.Counters->name
     {
@@ -1881,8 +1864,8 @@ static int demoRun(void *demoCtx)
         zstdgpu_ReferenceStore_AllocateMemory();
 
         // NOTE(pamartis): this call to reference ZSTD decompressor populates zstdgpu_ReferenceStore with ground-truth data.
-        int r = ZSTD_decompress(zstdReferenceUncompressedData, zstdReferenceUncompressedDataSize, zstdData, zstdDataSize);
-        debugPrint(L"[INFO] ZSTD_decompress  input size: %d  output size: %d   result: %d\n", zstdDataSize, zstdReferenceUncompressedDataSize, r); 
+        ptrdiff_t r = ZSTD_decompress(zstdReferenceUncompressedData, zstdReferenceUncompressedDataSize, zstdData, zstdDataSize);
+        debugPrint(L"[INFO] ZSTD_decompress  input size: %d  output size: %d   result: %lld\n", zstdDataSize, zstdReferenceUncompressedDataSize, r); 
     }
 
     if (chkCpu && !skipRefValidation)

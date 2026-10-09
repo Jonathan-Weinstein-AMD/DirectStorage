@@ -34,7 +34,7 @@ ZSTDGPU_RW_BUFFER(uint32_t)                     ZstdInOutPerFrameSeqStreamMinIdx
 ZSTDGPU_RW_BUFFER(uint32_t)                     ZstdInOutPerSeqStreamSeqStart           : register(u12, space11);
 ZSTDGPU_RW_BUFFER_GLC(uint32_t)                 ZstdInOutSeqCountPrefixLookback         : register(u13, space11);
 ZSTDGPU_RW_BUFFER_GLC(uint32_t)                 ZstdInOutBlockSeqCountPrefixLookback    : register(u14, space11);
-ZSTDGPU_RW_TYPED_BUFFER(int32_t, int16_t)       ZstdInOutFseProbs                       : register(u15, space11);
+ZSTDGPU_RW_BUFFER(int16_t)                      ZstdInOutFseProbs                       : register(u15, space11);
 ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t)      ZstdInOutDecompressedHuffmanWeightCount : register(u16, space11);
 ZSTDGPU_RW_BUFFER_GLC(uint32_t)                 ZstdInOutLitStreamCountPrefixLookback   : register(u17, space11);
 ZSTDGPU_RW_BUFFER(uint32_t)                     ZstdInOutHufWIdToHufLitId               : register(u18, space11);

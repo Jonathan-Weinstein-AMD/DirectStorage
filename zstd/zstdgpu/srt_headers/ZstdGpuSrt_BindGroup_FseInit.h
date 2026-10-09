@@ -17,20 +17,18 @@
 
 #ifdef __hlsl_dx_compiler
 
-#define ZSTDGPU_SRT_RS_BIND_GROUP_FseInit "DescriptorTable(SRV(t0, space=10, numDescriptors=1), UAV(u0, space=10, numDescriptors=3))"
+#define ZSTDGPU_SRT_RS_BIND_GROUP_FseInit "DescriptorTable(UAV(u0, space=10, numDescriptors=3))"
 
-ZSTDGPU_RO_TYPED_BUFFER(int32_t, int16_t)   ZstdInFseProbsDefault   : register(t0, space10);
-ZSTDGPU_RW_TYPED_BUFFER(int32_t, int16_t)   ZstdInOutFseProbs       : register(u0, space10);
-ZSTDGPU_RW_BUFFER(zstdgpu_FseInfo)          ZstdInOutFseInfos       : register(u1, space10);
-ZSTDGPU_RW_BUFFER(uint32_t)                 ZstdInOutFseElems       : register(u2, space10);
+ZSTDGPU_RW_BUFFER(int16_t)          ZstdInOutFseProbs   : register(u0, space10);
+ZSTDGPU_RW_BUFFER(zstdgpu_FseInfo)  ZstdInOutFseInfos   : register(u1, space10);
+ZSTDGPU_RW_BUFFER(uint32_t)         ZstdInOutFseElems   : register(u2, space10);
 
 template<typename T>
 static void zstdgpu_Srt_FillBindGroup_FseInit(ZSTDGPU_PARAM_INOUT(T) srt)
 {
-    srt.inFseProbsDefault   = ZstdInFseProbsDefault;
-    srt.inoutFseProbs       = ZstdInOutFseProbs;
-    srt.inoutFseInfos       = ZstdInOutFseInfos;
-    srt.inoutFseElems       = ZstdInOutFseElems;
+    srt.inoutFseProbs   = ZstdInOutFseProbs;
+    srt.inoutFseInfos   = ZstdInOutFseInfos;
+    srt.inoutFseElems   = ZstdInOutFseElems;
 }
 
 #else
@@ -38,10 +36,9 @@ static void zstdgpu_Srt_FillBindGroup_FseInit(ZSTDGPU_PARAM_INOUT(T) srt)
 template<typename T>
 static void zstdgpu_Srt_FillBindGroup_FseInit(T &srt, const zstdgpu_ResourceDataCpu &cpuRes)
 {
-    srt.inFseProbsDefault   = cpuRes.FseProbsDefault;
-    srt.inoutFseProbs       = cpuRes.FseProbs;
-    srt.inoutFseInfos       = cpuRes.FseInfos;
-    srt.inoutFseElems       = cpuRes.FseElems;
+    srt.inoutFseProbs   = cpuRes.FseProbs;
+    srt.inoutFseInfos   = cpuRes.FseInfos;
+    srt.inoutFseElems   = cpuRes.FseElems;
 }
 
 #endif /* #ifdef __hlsl_dx_compiler */

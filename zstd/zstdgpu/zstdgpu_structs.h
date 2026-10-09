@@ -159,7 +159,7 @@
 #   endif
 #endif
 
-#ifndef ZSTDGPU_RO_BYTE_BUFFER
+#ifndef ZSTDGPU_RO_RAW_BUFFER
 #   ifdef __hlsl_dx_compiler
 #       define ZSTDGPU_RO_RAW_BUFFER(type) ByteAddressBuffer /* no type, it's opaquue in HLSL side */
 #   else
@@ -347,11 +347,7 @@ static const uint32_t kzstdgpu_DispatchSlot_PropagateFseIndex            = 22;
 static const uint32_t kzstdgpu_DispatchSlot_Memset_CmpBlockCount         = 23;
 static const uint32_t kzstdgpu_DispatchSlot_Count                        = 24;
 
-#if defined(_GAMING_XBOX) || defined(__XBOX_SCARLETT) || defined(__XBOX_ONE)
-static const uint32_t kzstdgpu_DispatchSlot_CmdsPerSlot                  = 1;
-#else
-static const uint32_t kzstdgpu_DispatchSlot_CmdsPerSlot                  = 2;
-#endif
+static const uint32_t kzstdgpu_DispatchSlot_CmdsPerSlot                  = 1; // AMC: forcing executeIndirectWorkaround on GPUs that support large 1D dispatches
 
 static const uint32_t kzstdgpu_DispatchSlot_CmdStrideInUInt32            = 5;  // tgOffset, workItemCount, X, Y, Z
 static const uint32_t kzstdgpu_DispatchSlot_StrideInUInt32               = kzstdgpu_DispatchSlot_CmdsPerSlot * kzstdgpu_DispatchSlot_CmdStrideInUInt32;  // 10 (PC), 5 (Xbox)
@@ -360,13 +356,8 @@ static const uint32_t kzstdgpu_DispatchSlot_StrideInUInt32               = kzstd
 //      We use macro here to make sure we can use them to compile-out
 //      `groupshared` variables in HLSL which doesn't give other options.
 //
-#if defined(_GAMING_XBOX_SCARLETT) || defined(__XBOX_SCARLETT)
-#    define kzstdgpu_WaveSize_Min 32
-#elif defined(_GAMING_XBOX_XBOXONE) || defined(__XBOX_ONE)
-#    define kzstdgpu_WaveSize_Min 64
-#else
-#    define kzstdgpu_WaveSize_Min 4
-#endif
+
+#define kzstdgpu_WaveSize_Min 32 // AMC: changed from 4
 
 // NOTE(pamartis): for initialization, we aim one-wave threadgroups. On PC we choose 32 lanes.
 #if defined(_GAMING_XBOX) || defined(__XBOX_SCARLETT) || defined(__XBOX_ONE)
@@ -463,11 +454,7 @@ static const uint32_t kzstdgpu_TgSizeX_FinaliseSequenceOffsets = 64;
 static const uint32_t kzstdgpu_TgSizeX_FinaliseSequenceOffsets = 256;
 #endif
 
-#if defined(_GAMING_XBOX) || defined(__XBOX_SCARLETT) || defined(__XBOX_ONE)
-static const uint32_t kzstdgpu_TgSizeX_MemsetMemcpy = 64;
-#else
-static const uint32_t kzstdgpu_TgSizeX_MemsetMemcpy = 32;
-#endif
+static const uint32_t kzstdgpu_TgSizeX_MemsetMemcpy = 128; // AMC: changed from 32
 
 #if defined(_GAMING_XBOX) || defined(__XBOX_SCARLETT) || defined(__XBOX_ONE)
 static const uint32_t kzstdgpu_TgSizeX_ComputeDestBlockOffset = 64;

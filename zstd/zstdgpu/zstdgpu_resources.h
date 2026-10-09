@@ -24,7 +24,6 @@
 #endif
 
 #define ZSTDGPU_BUFFERS_LIST_UPLOAD_STAGE_0()                                                   \
-    ZSTDGPU_BUFFER(int16_t                                  , FseProbsDefault               )   \
     ZSTDGPU_BUFFER(uint32_t                                 , CompressedData                )   \
     ZSTDGPU_BUFFER(zstdgpu_OffsetAndSize                    , FramesRefs                    )
 
@@ -269,10 +268,6 @@ static void zstdgpu_ResourceInfo_InitZero(zstdgpu_ResourceInfo *outInfo)
 
 static void zstdgpu_ResourceInfo_Stage_0_InitSize(zstdgpu_ResourceInfo *outInfo, uint32_t frameCount, uint32_t dataCount)
 {
-    const uint32_t FseProbsDefault_Count = kzstdgpu_FseDefaultProbCount_LLen
-                                         + kzstdgpu_FseDefaultProbCount_Offs
-                                         + kzstdgpu_FseDefaultProbCount_MLen;
-
     const uint32_t FramesRefs_Count = frameCount;
     const uint32_t CompressedData_Count = (dataCount + 3) / 4; // because CompressedData is in uint32_t
     const uint32_t Counters_Count = 1;

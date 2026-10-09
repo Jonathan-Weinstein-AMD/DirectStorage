@@ -38,6 +38,9 @@
  *  3. zstdgpu_srt_structs.h that contains SRT-based structs shared betweeb C++ / HLSL
  *
  *  4. zstdgpu_srt_bind.h that creation of D3D12 descriptor tables and snippets to fully bind SRT-declared resources to a D3D12 command list
+ *
+ * AMC:
+ *  - Change FseProbs from typed buffer to structured buffer. Mostly enables SMEM for SRV loads if those may occur.
  */
 
 #ifndef ZSTDGPU_SRT_DECL_H
@@ -106,7 +109,7 @@ ZSTDGPU_SRT_BIND_GROUP_BEGIN(LiteralBytes, Stage2)
 ZSTDGPU_SRT_BIND_GROUP_END()
 
 ZSTDGPU_SRT_BIND_GROUP_BEGIN(FseProbsRead, Stage2)
-    ZSTDGPU_SRT_BUF_RO_TYPED(int32_t, int16_t               , FseProbs                      )
+    ZSTDGPU_SRT_BUF_RO_STRUCT(int16_t                      , FseProbs                      )
 ZSTDGPU_SRT_BIND_GROUP_END()
 
 ZSTDGPU_SRT_BIND_GROUP_BEGIN(FrameOutput, Stage2)
@@ -114,8 +117,7 @@ ZSTDGPU_SRT_BIND_GROUP_BEGIN(FrameOutput, Stage2)
 ZSTDGPU_SRT_BIND_GROUP_END()
 
 ZSTDGPU_SRT_BIND_GROUP_BEGIN(FseInit, Stage0|Stage1)
-    ZSTDGPU_SRT_BUF_RO_TYPED(int32_t, int16_t              , FseProbsDefault                )
-    ZSTDGPU_SRT_BUF_RW_TYPED(int32_t, int16_t              , FseProbs                       )
+    ZSTDGPU_SRT_BUF_RW_STRUCT(int16_t                      , FseProbs                       )
     ZSTDGPU_SRT_BUF_RW_STRUCT(zstdgpu_FseInfo              , FseInfos                       )
     ZSTDGPU_SRT_BUF_RW_STRUCT(uint32_t                     , FseElems                       )
 ZSTDGPU_SRT_BIND_GROUP_END()
@@ -136,7 +138,7 @@ ZSTDGPU_SRT_BIND_GROUP_BEGIN(ParseBlocksWrite, Stage1)
     ZSTDGPU_SRT_BUF_RW_STRUCT(uint32_t                      , PerSeqStreamSeqStart          )
     ZSTDGPU_SRT_BUF_RWGLC_STRUCT(uint32_t                   , SeqCountPrefixLookback        )
     ZSTDGPU_SRT_BUF_RWGLC_STRUCT(uint32_t                   , BlockSeqCountPrefixLookback   )
-    ZSTDGPU_SRT_BUF_RW_TYPED(int32_t, int16_t               , FseProbs                      )
+    ZSTDGPU_SRT_BUF_RW_STRUCT(int16_t                       , FseProbs                      )
     ZSTDGPU_SRT_BUF_RW_TYPED(uint32_t, uint8_t              , DecompressedHuffmanWeightCount)
     ZSTDGPU_SRT_BUF_RWGLC_STRUCT(uint32_t                   , LitStreamCountPrefixLookback  )
     ZSTDGPU_SRT_BUF_RW_STRUCT(uint32_t                      , HufWIdToHufLitId              )

@@ -87,22 +87,6 @@ ZSTDGPU_WARN_POP_MSVC()
 #include "ZstdGpuPropagateFseIndex.h"
 #include "ZstdGpuUpdateDispatchArgs.h"
 
-static const int16_t kzstdgpuFseProbsDefault[] =
-{
-    // SEQ_LITERAL_LENGTH_DEFAULT_DIST
-    4, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1,  1,  2,  2,
-    2, 2, 2, 2, 2, 2, 2, 3, 2, 1, 1, 1, 1, 1, -1, -1, -1, -1,
-
-    // SEQ_OFFSET_DEFAULT_DIST
-    1, 1, 1, 1, 1, 1, 2, 2, 2, 1,  1,  1,  1,  1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1,
-
-    // SEQ_MATCH_LENGTH_DEFAULT_DIST
-    1, 4, 3, 2, 2, 2, 2, 2, 2, 1, 1,  1,  1,  1,  1,  1,  1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  1,  1,  1,  1,  1,  1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1
-};
-
 struct zstdgpu_BlockInfo
 {
     uint32_t litStreamCount;
@@ -1631,7 +1615,6 @@ ZSTDGPU_ENUM(Status) zstdgpu_SubmitWithExternalMemory(zstdgpu_PerRequestContext 
             {
                 req->uploadCallback(req->resData.cpu2Gpu.CompressedDataCpu, req->zstdCompressedFramesByteCount, req->resData.cpu2Gpu.FramesRefsCpu, req->zstdFrameCount, req->uploadUserdata);
             }
-            memcpy(req->resData.cpu2Gpu.FseProbsDefaultCpu, kzstdgpuFseProbsDefault, sizeof(kzstdgpuFseProbsDefault));
         }
 
         D3D12AID_SAFE_RELEASE(req->srts.heap);
@@ -1745,7 +1728,6 @@ ZSTDGPU_ENUM(Status) zstdgpu_SubmitAllStagesWithExternalMemory(zstdgpu_PerReques
         {
             req->uploadCallback(req->resData.cpu2Gpu.CompressedDataCpu, req->zstdCompressedFramesByteCount, req->resData.cpu2Gpu.FramesRefsCpu, req->zstdFrameCount, req->uploadUserdata);
         }
-        memcpy(req->resData.cpu2Gpu.FseProbsDefaultCpu, kzstdgpuFseProbsDefault, sizeof(kzstdgpuFseProbsDefault));
 
         D3D12AID_SAFE_RELEASE(req->srts.heap);
         req->srts.heap = shaderVisibleHeap;
@@ -1836,7 +1818,6 @@ ZSTDGPU_ENUM(Status) zstdgpu_SubmitWithInteralMemory(zstdgpu_PerRequestContext r
             {
                 req->uploadCallback(req->resData.cpu2Gpu.CompressedDataCpu, req->zstdCompressedFramesByteCount, req->resData.cpu2Gpu.FramesRefsCpu, req->zstdFrameCount, req->uploadUserdata);
             }
-            memcpy(req->resData.cpu2Gpu.FseProbsDefaultCpu, kzstdgpuFseProbsDefault, sizeof(kzstdgpuFseProbsDefault));
         }
 
         if (NULL == req->srts.heap)
@@ -2023,7 +2004,6 @@ ZSTDGPU_ENUM(Status) zstdgpu_SubmitAllStagesWithInteralMemory(zstdgpu_PerRequest
         {
             req->uploadCallback(req->resData.cpu2Gpu.CompressedDataCpu, req->zstdCompressedFramesByteCount, req->resData.cpu2Gpu.FramesRefsCpu, req->zstdFrameCount, req->uploadUserdata);
         }
-        memcpy(req->resData.cpu2Gpu.FseProbsDefaultCpu, kzstdgpuFseProbsDefault, sizeof(kzstdgpuFseProbsDefault));
 
         if (NULL == req->srts.heap)
         {
@@ -2191,8 +2171,8 @@ void zstdgpu_SubmitStage0(zstdgpu_PerRequestContext req, ID3D12GraphicsCommandLi
         req->timestampSlot[i] = ~0u;
 #endif
     {
-        D3D12_RESOURCE_BARRIER barriers[3];
-        uint32_t uploadBarrierCount = 0;
+        D3D12_RESOURCE_BARRIER barriers[16]; // big enough
+        uint32_t bc = 0;
 
         #define zstdgpu_PushUpload(name) cmdList->CopyResource(req->resData.gpuOnly.name, req->resData.cpu2Gpu.name)
 
@@ -2201,18 +2181,15 @@ void zstdgpu_SubmitStage0(zstdgpu_PerRequestContext req, ID3D12GraphicsCommandLi
             zstdgpu_PushUpload(CompressedData);
             zstdgpu_PushUpload(FramesRefs);
         }
-        zstdgpu_PushUpload(FseProbsDefault);
         #undef zstdgpu_PushUpload
 
-        setResourceState(barriers, 0, req->resData.gpuOnly.FseProbsDefault, COPY_DEST, NON_PIXEL_SHADER_RESOURCE);
-        uploadBarrierCount += 1;
         if (zstdgpu_HasFlag(req->setupFlags, kzstdgpu_SetupFlags_InputsCpuMemory))
         {
-            setResourceState(barriers, 1, req->resData.gpuOnly.CompressedData, COPY_DEST, NON_PIXEL_SHADER_RESOURCE);
-            setResourceState(barriers, 2, req->resData.gpuOnly.FramesRefs, COPY_DEST, NON_PIXEL_SHADER_RESOURCE);
-            uploadBarrierCount += 2;
+            setResourceState(barriers, bc++, req->resData.gpuOnly.CompressedData, COPY_DEST, NON_PIXEL_SHADER_RESOURCE);
+            setResourceState(barriers, bc++, req->resData.gpuOnly.FramesRefs, COPY_DEST, NON_PIXEL_SHADER_RESOURCE);
         }
-        cmdList->ResourceBarrier(uploadBarrierCount, barriers);
+        ZSTDGPU_ASSERT(bc <= _countof(barriers));
+        cmdList->ResourceBarrier(bc, barriers);
     }
 #if ZSTDGPU_ENABLE_TIMESTAMPS
     // NOTE(pamartis): So far we don't include upload into measurement intentionally
