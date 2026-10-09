@@ -35,7 +35,5 @@ void main(uint2 groupId : SV_GroupId, uint threadId : SV_GroupThreadId)
 
     const uint32_t i = zstdgpu_ConvertTo32BitGroupId(groupId, srt.tgOffset) * kzstdgpu_TgSizeX_ParseCompressedBlocks + threadId;
 
-    zstdgpu_Srt_FillInline(srt, srt.workItemCount);
-
     zstdgpu_ShaderEntry_ParseCompressedBlocks(srt, i);
 }

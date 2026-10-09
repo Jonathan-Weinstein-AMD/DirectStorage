@@ -209,9 +209,6 @@ typedef struct zstdgpu_InitFseTable_SRT
     uint32_t                                                tgOffset;
     uint32_t                                                workItemCount;
     uint32_t                                                tableType;
-    uint32_t                                                tableStartIndex;
-    uint32_t                                                tableDataStart;
-    uint32_t                                                tableDataCount;
 } zstdgpu_InitFseTable_SRT;
 
 typedef struct zstdgpu_ComputeDestBlockOffsets_SRT
@@ -300,7 +297,6 @@ typedef struct zstdgpu_ParseCompressedBlocks_SRT
     uint32_t                                                workItemCount;
     uint32_t                                                compressedBufferSizeInBytes;
     uint32_t                                                frameCount;
-    uint32_t                                                compressedBlockCount;
 } zstdgpu_ParseCompressedBlocks_SRT;
 
 #endif /* ZSTDGPU_SRT_GENERATED_STRUCTS_H */

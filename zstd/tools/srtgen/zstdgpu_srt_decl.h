@@ -41,6 +41,7 @@
  *
  * AMC:
  *  - Change FseProbs from typed buffer to structured buffer. Mostly enables SMEM for SRV loads if those may occur.
+ *  - Remove ZSTDGPU_SRT_CONST_INLINE usage.
  */
 
 #ifndef ZSTDGPU_SRT_DECL_H
@@ -307,10 +308,6 @@ ZSTDGPU_SRT_BEGIN(InitFseTable, Indirect)
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , tgOffset                      )
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , workItemCount                 )
     ZSTDGPU_SRT_CONST(uint32_t                              , tableType                     )
-
-    ZSTDGPU_SRT_CONST_INLINE(uint32_t                       , tableStartIndex               )
-    ZSTDGPU_SRT_CONST_INLINE(uint32_t                       , tableDataStart                )
-    ZSTDGPU_SRT_CONST_INLINE(uint32_t                       , tableDataCount                )
 ZSTDGPU_SRT_END()
 
 ZSTDGPU_SRT_BEGIN(ComputeDestBlockOffsets, Indirect)
@@ -377,8 +374,6 @@ ZSTDGPU_SRT_BEGIN(ParseCompressedBlocks, Indirect)
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , workItemCount                 )
     ZSTDGPU_SRT_CONST(uint32_t                              , compressedBufferSizeInBytes   )
     ZSTDGPU_SRT_CONST(uint32_t                              , frameCount                    )
-
-    ZSTDGPU_SRT_CONST_INLINE(uint32_t                       , compressedBlockCount          )
 ZSTDGPU_SRT_END()
 
 ZSTDGPU_SRT_PASS_BEGIN(Memset, SeqStreamMinIdx, Direct)

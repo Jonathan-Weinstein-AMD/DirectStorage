@@ -82,9 +82,4 @@ static void zstdgpu_Srt_Fill(zstdgpu_ParseCompressedBlocks_SRT &srt, const zstdg
 
 #endif
 
-static void zstdgpu_Srt_FillInline(ZSTDGPU_PARAM_INOUT(zstdgpu_ParseCompressedBlocks_SRT) srt, uint32_t compressedBlockCount)
-{
-    srt.compressedBlockCount                            = compressedBlockCount;
-}
-
 #endif /* ZSTDGPU_SRT_GENERATED_ParseCompressedBlocks_H */

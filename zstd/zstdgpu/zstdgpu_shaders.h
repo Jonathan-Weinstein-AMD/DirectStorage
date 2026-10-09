@@ -37,15 +37,7 @@ static void zstdgpu_TypedStoreU8(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) inou
 }
 
 #ifdef __hlsl_dx_compiler
-static uint32_t zstdgpu_ConvertTo32BitGroupId(uint32_t2 groupId, uint32_t tgOffset)
-{
-#if defined(__XBOX_SCARLETT) || defined(__XBOX_ONE)
-    // NOTE(pamartis): tgOffset is always zero and groupId.x contains 32-bit value
-    return groupId.x;
-#else
-    return tgOffset + ((groupId.y << kzstdgpu_MaxCount_ThreadGroupsPerDimensionLog2) + groupId.x);
-#endif
-}
+#define zstdgpu_ConvertTo32BitGroupId(groupId, tgOffset) (groupId).x // AMC
 #endif
 
 static void zstdgpu_EmitDispatch(ZSTDGPU_RW_BUFFER(uint32_t) dispatchArgs, ZSTDGPU_RW_BUFFER(uint32_t) dispatchCnts, uint32_t slot, uint32_t elemCount, uint32_t elemsPerTGroup, bool executeIndirectWorkaround)
@@ -1019,7 +1011,8 @@ static uint32_t zstdgpu_PropagateFseTableIndex(ZSTDGPU_RW_BUFFER_GLC(uint32_t) i
 
 static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgpu_ParseCompressedBlocks_SRT) srt, uint32_t threadId)
 {
-    if (threadId >= srt.compressedBlockCount)
+    const uint32_t compressedBlockCount = srt.workItemCount;
+    if (threadId >= compressedBlockCount)
         return;
 
     zstdgpu_Forward_BitBuffer buffer;
@@ -1224,13 +1217,13 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
                     }                                                                       \
                     fseTableIndex##name = zstdgpu_ComputeFseIndex##name(                    \
                         WaveReadLaneFirst(fseWaveTableStart##name) + WavePrefixCountBits(true),\
-                        srt.compressedBlockCount                                            \
+                        compressedBlockCount                                                \
                     );                                                                      \
                     zstdgpu_ParseFseHeader(buffer, srt.inoutFseInfos, srt.inoutFseProbs, fseTableIndex##name, kzstdgpu_FseProbMaxAccuracy_##name)
 
                 ALLOCATE_FSE_TABLE_INDEX(HufW);
 
-                fseTableIndexHufW -= zstdgpu_ComputeFseIndexHufW(0, srt.compressedBlockCount);
+                fseTableIndexHufW -= zstdgpu_ComputeFseIndexHufW(0, compressedBlockCount);
 
                 zstdgpu_OffsetAndSize fseCompressedHuffmanWeights;
                 fseCompressedHuffmanWeights.offs = zstdgpu_Forward_BitBuffer_GetByteOffset(buffer);
@@ -1278,7 +1271,7 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
                 // NOTE(pamartis): store the reference to the uncompressed weights at the end of the stream
                 // to save memory and use `compressedBlockCount` references for both FSE-compressed and
                 // uncompressed references
-                fseTableIndexHufW = srt.compressedBlockCount - 1 - fseTableIndexHufW;
+                fseTableIndexHufW = compressedBlockCount - 1 - fseTableIndexHufW;
 
                 srt.inoutHufRefs[fseTableIndexHufW] = uncompressedHuffmanWeights;
                 zstdgpu_TypedStoreU8(srt.inoutDecompressedHuffmanWeightCount, fseTableIndexHufW, huffWeightCnt);
@@ -1482,7 +1475,7 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
             else if (0 == mode##name)                                                       \
             {                                                                               \
                 /** default FSE table is always at index '0' in a chunk of appropriate type*/\
-                fseTableIndex##name = zstdgpu_ComputeFseIndex##name(0, srt.compressedBlockCount);\
+                fseTableIndex##name = zstdgpu_ComputeFseIndex##name(0, compressedBlockCount);\
             }                                                                               \
             else if (1 == mode##name)                                                       \
             {                                                                               \
@@ -1578,7 +1571,15 @@ ZSTDGPU_INIT_FSE_TABLE_LDS_MULTI_WAVE()
 
 #include "zstdgpu_lds_decl_undef.h"
 
-static void zstdgpu_ShaderEntry_InitFseTable(ZSTDGPU_PARAM_INOUT(zstdgpu_InitFseTable_SRT) srt, uint32_t groupId, uint32_t i)
+// AMC: these were ZSTDGPU_SRT_CONST_INLINE (added to SRT struct, but not root constants)
+struct zstdgpu_InitFseTable_Arg
+{
+    uint32_t tableStartIndex;
+    uint32_t tableDataStart;
+    uint32_t tableDataCount;
+};
+
+static void zstdgpu_ShaderEntry_InitFseTable(ZSTDGPU_PARAM_INOUT(zstdgpu_InitFseTable_SRT) srt, uint32_t groupId, uint32_t i, zstdgpu_InitFseTable_Arg arg)
 {
 
 #ifndef ZSTD_BITCNT_NSTATE_METHOD_REFERENCE
@@ -1625,9 +1626,9 @@ static void zstdgpu_ShaderEntry_InitFseTable(ZSTDGPU_PARAM_INOUT(zstdgpu_InitFse
     #endif
     #include "zstdgpu_lds_decl_undef.h"
 
-    const uint32_t tableIndex    = srt.tableStartIndex + groupId;
+    const uint32_t tableIndex    = arg.tableStartIndex + groupId;
     const uint32_t frqDataOffset = tableIndex * kzstdgpu_MaxCount_FseProbs;
-    const uint32_t tblDataOffset = srt.tableDataStart + groupId * srt.tableDataCount;
+    const uint32_t tblDataOffset = arg.tableDataStart + groupId * arg.tableDataCount;
 
     const zstdgpu_FseInfo fseInfo = srt.inFseInfos[kzstdgpu_FseRleTableCount + tableIndex];
 

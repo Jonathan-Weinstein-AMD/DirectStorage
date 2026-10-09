@@ -64,6 +64,10 @@ void main(uint2 groupId2 : SV_GroupId, uint32_t i : SV_GroupThreadId)
 
     const uint32_t groupId = zstdgpu_ConvertTo32BitGroupId(groupId2, srt.tgOffset);
 
+    zstdgpu_InitFseTable_Arg arg;
+    #define zstdgpu_Srt_FillInline(_, a, b, c) \
+        (arg.tableStartIndex = (a), arg.tableDataStart = (b), arg.tableDataCount = (c))
+
     const uint32_t cmpBlockCount = srt.inCounters[0].Blocks_CMP;
     if (srt.tableType == 1u) // LLen
     {
@@ -81,5 +85,6 @@ void main(uint2 groupId2 : SV_GroupId, uint32_t i : SV_GroupThreadId)
     {
         zstdgpu_Srt_FillInline(srt, 0u, zstdgpu_ComputeFseDataStartHufW(0, cmpBlockCount), kzstdgpu_FseElemMaxCount_HufW);
     }
-    zstdgpu_ShaderEntry_InitFseTable(srt, groupId, i);
+    #undef zstdgpu_Srt_FillInline
+    zstdgpu_ShaderEntry_InitFseTable(srt, groupId, i, arg);
 }

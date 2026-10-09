@@ -75,11 +75,4 @@ static void zstdgpu_Srt_Fill(zstdgpu_InitFseTable_SRT &srt, const zstdgpu_Resour
 
 #endif
 
-static void zstdgpu_Srt_FillInline(ZSTDGPU_PARAM_INOUT(zstdgpu_InitFseTable_SRT) srt, uint32_t tableStartIndex, uint32_t tableDataStart, uint32_t tableDataCount)
-{
-    srt.tableStartIndex                                 = tableStartIndex;
-    srt.tableDataStart                                  = tableDataStart;
-    srt.tableDataCount                                  = tableDataCount;
-}
-
 #endif /* ZSTDGPU_SRT_GENERATED_InitFseTable_H */
