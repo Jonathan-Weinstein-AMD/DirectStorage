@@ -8,7 +8,7 @@
  *
  * Advanced Technology Group (ATG)
  * Author(s):   Pavel Martishevsky (pamartis@microsoft.com)
- * 
+ *
  * This header contains declaration of functions accessing into Local Data Share (LDS), such as
  * and load/store and atomics function, and macro to declare LDS space in a shader C++/HLSL function.
  *
@@ -25,7 +25,7 @@
 // For HLSL this file contains only definitions that don't contain references to the LDS because
 // HLSL doesn't support passing `groupshared` variables into functions
 
-#pragma dxc push
+#pragma dxc diagnostic push
 #pragma dxc diagnostic ignored "-Wundefined-internal"
 static uint32_t zstdgpu_LdsLoadU32(zstdgpu_lds_const_uintptr_t offsetInUInt32);
 static void zstdgpu_LdsStoreU32(zstdgpu_lds_uintptr_t offsetInUInt32, uint32_t x);
@@ -34,7 +34,7 @@ static void zstdgpu_LdsAtomicMaxU32(zstdgpu_lds_uintptr_t offsetInUInt32, uint32
 static void zstdgpu_LdsAtomicMinU32(zstdgpu_lds_uintptr_t offsetInUInt32, uint32_t x);
 static void zstdgpu_LdsAtomicAndU32(zstdgpu_lds_uintptr_t offsetInUInt32, uint32_t x);
 static void zstdgpu_LdsAtomicOrU32(zstdgpu_lds_uintptr_t offsetInUInt32, uint32_t x);
-#pragma dxc pop
+#pragma dxc diagnostic pop
 
 #else
 

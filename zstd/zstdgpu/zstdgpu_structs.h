@@ -21,13 +21,18 @@
 
 #ifndef ZSTDGPU_UNUSED
 #   ifdef __hlsl_dx_compiler
-#       define ZSTDGPU_UNUSED(x) (void)0
+#       define ZSTDGPU_UNUSED(x) ((void)x)
 #   else
 #       define ZSTDGPU_UNUSED(x) (void)(sizeof(x)) /** we prefer sizeof to avoid side effects */
 #   endif
 #endif
 
 #include "zstdgpu_assert.h"
+#if ZSTDGPU_ASSERT_BACKEND == ZSTDGPU_ASSERT_BACKEND_NONE || defined(__hlsl_dx_compiler)
+#define ZSTDGPU_ASSERTED_ONLY(...)
+#else
+#define ZSTDGPU_ASSERTED_ONLY(...) __VA_ARGS__
+#endif
 
 #ifndef ZSTDGPU_PRAGMA_GNUC
 #   if defined(__clang__) || defined(__GNUC__)  || defined(__hlsl_dx_compiler)
@@ -182,6 +187,13 @@
 #       define ZSTDGPU_PARAM_INOUT(type) type &
 #   endif
 #endif
+
+
+#   ifdef __hlsl_dx_compiler
+#       define ZSTDGPU_PARAM_OUT(type) out type
+#   else
+#       define ZSTDGPU_PARAM_OUT(type) type &
+#   endif
 
 // Opaque LDS address types: offset on HLSL, pointer on C++.
 // Using these instead of raw uint32_t / uint32_t* prevents accidental type
@@ -832,7 +844,7 @@ static inline uint32_t zstdgpu_DecodeSeqRepeatOffsetAndApplyPreviousOffsets(uint
 static inline uint32_t zstdgpu_SubtractByteFromSeqOffset(uint32_t x)
 {
     // NOTE(pamartis): Because the offset can be either "encoded" or normal, we have to check underflows differently
-    uint32_t bit = zstdgpu_DecodeSeqRepeatOffsetEncoded(x);
+    ZSTDGPU_ASSERTED_ONLY( uint32_t bit = zstdgpu_DecodeSeqRepeatOffsetEncoded(x); )
     ZSTDGPU_ASSERT((0 == bit && x >= 4 && x < kzstdgpu_SeqOffset_Encoded_BitMask) || (0 != bit && zstdgpu_DecodeSeqRepeatOffsetSubtractedBytes(x) < ((1u << kzstdgpu_SeqOffset_RepType_BitBase) - 1)));
 
     // case 1: if we have an actual offset (bit 29 is 0) -- we subtract a byte
@@ -1026,7 +1038,7 @@ static inline void zstdgpu_Forward_BitBuffer_Skip(ZSTDGPU_PARAM_INOUT(zstdgpu_Fo
 #endif
 }
 
-static inline void zstdgpu_Forward_BitBuffer_InitWithSegment(ZSTDGPU_PARAM_INOUT(zstdgpu_Forward_BitBuffer) outBuffer, ZSTDGPU_RO_BUFFER(uint32_t) buffer, ZSTDGPU_PARAM_IN(zstdgpu_OffsetAndSize) segment, uint32_t bytesz)
+static inline void zstdgpu_Forward_BitBuffer_InitWithSegment(ZSTDGPU_PARAM_OUT(zstdgpu_Forward_BitBuffer) outBuffer, ZSTDGPU_RO_BUFFER(uint32_t) buffer, ZSTDGPU_PARAM_IN(zstdgpu_OffsetAndSize) segment, uint32_t bytesz)
 {
     // init as normal buffer but set `dstdatasz == offset + srcdatasz` because we're going to skip `offset` bytes
     zstdgpu_Forward_BitBuffer_Init(outBuffer, buffer, segment.offs + segment.size, bytesz);
@@ -1081,7 +1093,7 @@ static inline uint32_t reversebits(uint32_t x)
 
 #endif
 
-static inline void zstdgpu_Backward_BitBuffer_V0_InitWithSegment(ZSTDGPU_PARAM_INOUT(zstdgpu_Backward_BitBuffer_V0) outBuffer, ZSTDGPU_RO_RAW_BUFFER(uint32_t) buffer, ZSTDGPU_PARAM_IN(zstdgpu_OffsetAndSize) segment)
+static inline void zstdgpu_Backward_BitBuffer_V0_InitWithSegment(ZSTDGPU_PARAM_OUT(zstdgpu_Backward_BitBuffer_V0) outBuffer, ZSTDGPU_RO_RAW_BUFFER(uint32_t) buffer, ZSTDGPU_PARAM_IN(zstdgpu_OffsetAndSize) segment)
 {
     const uint32_t datasz = segment.offs + segment.size;
 
@@ -1269,7 +1281,7 @@ static inline void zstdgpu_HuffmanStream_ConditionalFetch(ZSTDGPU_PARAM_INOUT(zs
     stream.needsFetchSoon = false;
 }
 
-static inline void zstdgpu_HuffmanStream_InitWithSegment(ZSTDGPU_PARAM_INOUT(zstdgpu_HuffmanStream) stream, ZSTDGPU_RO_RAW_BUFFER(uint32_t) buffer, ZSTDGPU_PARAM_IN(zstdgpu_OffsetAndSize) segment, ZSTDGPU_PARAM_IN(uint32_t) maxBitsPerCode)
+static inline void zstdgpu_HuffmanStream_InitWithSegment(ZSTDGPU_PARAM_OUT(zstdgpu_HuffmanStream) stream, ZSTDGPU_RO_RAW_BUFFER(uint32_t) buffer, ZSTDGPU_PARAM_IN(zstdgpu_OffsetAndSize) segment, ZSTDGPU_PARAM_IN(uint32_t) maxBitsPerCode)
 {
     // NOTE(jweinste): doing a single DWORD load here may reduce codesize/ALU here in the once-called InitWithSegment(),
     // but we don't since we must setup 8-byte alignment for subsequent fetches.
@@ -1352,7 +1364,7 @@ static inline void zstdgpu_HuffmanStream_Consume(ZSTDGPU_PARAM_INOUT(zstdgpu_Huf
     stream.data0 <<= data0Consumed;
 }
 
-static inline void zstdgpu_Backward_BitBuffer_Init(ZSTDGPU_PARAM_INOUT(zstdgpu_Backward_BitBuffer) outBitBuffer, ZSTDGPU_RO_RAW_BUFFER(uint32_t) buffer, ZSTDGPU_PARAM_IN(zstdgpu_OffsetAndSize) segment)
+static inline void zstdgpu_Backward_BitBuffer_Init(ZSTDGPU_PARAM_OUT(zstdgpu_Backward_BitBuffer) outBitBuffer, ZSTDGPU_RO_RAW_BUFFER(uint32_t) buffer, ZSTDGPU_PARAM_IN(zstdgpu_OffsetAndSize) segment)
 {
     const uint32_t endbyte = segment.offs + segment.size - 1u;
 
@@ -1414,7 +1426,7 @@ static inline void zstdgpu_Backward_BitBuffer_Pop(ZSTDGPU_PARAM_INOUT(zstdgpu_Ba
     inoutBuffer.bitpos += bitcnt;
 }
 
-static inline void zstdgpu_Backward_BitBuffer_InitWithSegment(ZSTDGPU_PARAM_INOUT(zstdgpu_Backward_BitBuffer) outBitBuffer, ZSTDGPU_RO_RAW_BUFFER(uint32_t) buffer, ZSTDGPU_PARAM_IN(zstdgpu_OffsetAndSize) segment)
+static inline void zstdgpu_Backward_BitBuffer_InitWithSegment(ZSTDGPU_PARAM_OUT(zstdgpu_Backward_BitBuffer) outBitBuffer, ZSTDGPU_RO_RAW_BUFFER(uint32_t) buffer, ZSTDGPU_PARAM_IN(zstdgpu_OffsetAndSize) segment)
 {
     zstdgpu_Backward_BitBuffer_Init(outBitBuffer, buffer, segment);
 
@@ -1443,7 +1455,7 @@ ZSTDGPU_BITBUF_DEFINE_STANDARD_METHODS(Backward_BitBuffer)
 #   error `ZSTDGPU_BACKWARD_BITBUF_TST` must not be defined.
 #endif
 
-static inline void zstdgpu_Backward_CmpBitBuffer_InitWithSegment(ZSTDGPU_PARAM_INOUT(zstdgpu_Backward_CmpBitBuffer) outBuffer, ZSTDGPU_RO_RAW_BUFFER(uint32_t) buffer, ZSTDGPU_PARAM_IN(zstdgpu_OffsetAndSize) segment)
+static inline void zstdgpu_Backward_CmpBitBuffer_InitWithSegment(ZSTDGPU_PARAM_OUT(zstdgpu_Backward_CmpBitBuffer) outBuffer, ZSTDGPU_RO_RAW_BUFFER(uint32_t) buffer, ZSTDGPU_PARAM_IN(zstdgpu_OffsetAndSize) segment)
 {
     ZSTDGPU_BACKWARD_BITBUF_REF(InitWithSegment)(outBuffer.bbref, buffer, segment);
     ZSTDGPU_BACKWARD_BITBUF_TST(InitWithSegment)(outBuffer.bbtst, buffer, segment);
@@ -1452,8 +1464,12 @@ static inline void zstdgpu_Backward_CmpBitBuffer_InitWithSegment(ZSTDGPU_PARAM_I
 static inline bool zstdgpu_Backward_CmpBitBuffer_CanRefill(ZSTDGPU_PARAM_IN(zstdgpu_Backward_CmpBitBuffer) inBuffer, uint32_t bitcnt)
 {
     const bool resultRef = ZSTDGPU_BACKWARD_BITBUF_REF(CanRefill)(inBuffer.bbref, bitcnt);
-    const bool resultTst = ZSTDGPU_BACKWARD_BITBUF_TST(CanRefill)(inBuffer.bbtst, bitcnt);
-    ZSTDGPU_ASSERT(resultRef == resultTst);
+    ZSTDGPU_ASSERTED_ONLY(
+        const bool resultTst = ZSTDGPU_BACKWARD_BITBUF_TST(CanRefill)(inBuffer.bbtst, bitcnt);
+        ZSTDGPU_ASSERT(resultRef == resultTst);
+    )
+    ZSTDGPU_UNUSED(inBuffer);
+    ZSTDGPU_UNUSED(bitcnt);
     return resultRef;
 }
 
@@ -1465,9 +1481,13 @@ static inline void zstdgpu_Backward_CmpBitBuffer_Refill(ZSTDGPU_PARAM_INOUT(zstd
 
 static inline uint32_t zstdgpu_Backward_CmpBitBuffer_Top(ZSTDGPU_PARAM_IN(zstdgpu_Backward_CmpBitBuffer) inBuffer, uint32_t bitcnt)
 {
-    const uint32_t resultRef = ZSTDGPU_BACKWARD_BITBUF_REF(Top)(inBuffer.bbref, bitcnt);
-    const uint32_t resultTst = ZSTDGPU_BACKWARD_BITBUF_TST(Top)(inBuffer.bbtst, bitcnt);
-    ZSTDGPU_ASSERT(resultRef == resultTst);
+        const uint32_t resultRef = ZSTDGPU_BACKWARD_BITBUF_REF(Top)(inBuffer.bbref, bitcnt);
+    ZSTDGPU_ASSERTED_ONLY(
+        const uint32_t resultTst = ZSTDGPU_BACKWARD_BITBUF_TST(Top)(inBuffer.bbtst, bitcnt);
+        ZSTDGPU_ASSERT(resultRef == resultTst);
+    )
+    ZSTDGPU_UNUSED(inBuffer);
+    ZSTDGPU_UNUSED(bitcnt);
     return resultRef;
 }
 

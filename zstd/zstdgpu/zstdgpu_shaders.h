@@ -269,10 +269,10 @@ static inline void zstdgpu_GroupBallotLdsStore(uint32_t laneCnt, uint32_t VGPR, 
     }
 }
 
-static inline void zstdgpu_ParseFrameHeader(ZSTDGPU_PARAM_INOUT(uint64_t) windowSize,
-                                            ZSTDGPU_PARAM_INOUT(uint64_t) uncompSize,
-                                            ZSTDGPU_PARAM_INOUT(uint32_t) dictionary,
-                                            ZSTDGPU_PARAM_INOUT(uint32_t) statusFlag,
+static inline void zstdgpu_ParseFrameHeader(ZSTDGPU_PARAM_OUT(uint64_t) windowSize,
+                                            ZSTDGPU_PARAM_OUT(uint64_t) uncompSize,
+                                            ZSTDGPU_PARAM_OUT(uint32_t) dictionary,
+                                            ZSTDGPU_PARAM_OUT(uint32_t) statusFlag,
                                             ZSTDGPU_PARAM_INOUT(zstdgpu_Forward_BitBuffer) bits)
 {
     // "A content compressed by Zstandard is transformed into a Zstandard frame.
