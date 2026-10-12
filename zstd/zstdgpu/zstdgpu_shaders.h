@@ -29,10 +29,10 @@
 static void zstdgpu_TypedStoreU8(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) inoutBuffer, uint32_t index, uint32_t value)
 {
 #ifdef __hlsl_dx_compiler
-    inoutBuffer[index] = value;
+    DEREF(inoutBuffer, (index)) = value;
 #else
     ZSTDGPU_ASSERT(value < (1u << 8u));
-    inoutBuffer[index] = (uint8_t)value;
+    DEREF(inoutBuffer, (index)) = (uint8_t)value;
 #endif
 }
 
@@ -62,12 +62,12 @@ static void zstdgpu_EmitDispatch(ZSTDGPU_RW_BUFFER(uint32_t) dispatchArgs, ZSTDG
     if (writeSingleArgumentRecordOnly)
     {
         // dispatch 0: no problems with # of threadgroup per dimension, support 32-bit
-        dispatchArgs[baseIdx + 0] = 0;          // tgOffset
-        dispatchArgs[baseIdx + 1] = elemCount;  // workItemCount
-        dispatchArgs[baseIdx + 2] = tgCount;
-        dispatchArgs[baseIdx + 3] = 1;
-        dispatchArgs[baseIdx + 4] = 1;
-        dispatchCnts[slot] = 1;
+        DEREF(dispatchArgs, (baseIdx + 0)) = 0;          // tgOffset
+        DEREF(dispatchArgs, (baseIdx + 1)) = elemCount;  // workItemCount
+        DEREF(dispatchArgs, (baseIdx + 2)) = tgCount;
+        DEREF(dispatchArgs, (baseIdx + 3)) = 1;
+        DEREF(dispatchArgs, (baseIdx + 4)) = 1;
+        DEREF(dispatchCnts, (slot)) = 1;
     }
     else
     {
@@ -77,35 +77,35 @@ static void zstdgpu_EmitDispatch(ZSTDGPU_RW_BUFFER(uint32_t) dispatchArgs, ZSTDG
         if (tgCountY > 0)
         {
             // dispatch 0: most of threadgroups are launched via 2d dispatch with the maximal possible number of threadgroups per dimension
-            dispatchArgs[baseIdx + 0] = 0;          // tgOffset
-            dispatchArgs[baseIdx + 1] = elemCount;  // workItemCount
-            dispatchArgs[baseIdx + 2] = 1u << kzstdgpu_MaxCount_ThreadGroupsPerDimensionLog2;
-            dispatchArgs[baseIdx + 3] = tgCountY;
-            dispatchArgs[baseIdx + 4] = 1;
+            DEREF(dispatchArgs, (baseIdx + 0)) = 0;          // tgOffset
+            DEREF(dispatchArgs, (baseIdx + 1)) = elemCount;  // workItemCount
+            DEREF(dispatchArgs, (baseIdx + 2)) = 1u << kzstdgpu_MaxCount_ThreadGroupsPerDimensionLog2;
+            DEREF(dispatchArgs, (baseIdx + 3)) = tgCountY;
+            DEREF(dispatchArgs, (baseIdx + 4)) = 1;
 
             // dispatch 1: the remaining threadgroups are launched via 1d dispatch
-            dispatchArgs[baseIdx + 5] = tgCountY << kzstdgpu_MaxCount_ThreadGroupsPerDimensionLog2;  // tgOffset
-            dispatchArgs[baseIdx + 6] = elemCount;  // workItemCount
-            dispatchArgs[baseIdx + 7] = tgCountX;
-            dispatchArgs[baseIdx + 8] = 1;
-            dispatchArgs[baseIdx + 9] = 1;
-            dispatchCnts[slot] = 2;
+            DEREF(dispatchArgs, (baseIdx + 5)) = tgCountY << kzstdgpu_MaxCount_ThreadGroupsPerDimensionLog2;  // tgOffset
+            DEREF(dispatchArgs, (baseIdx + 6)) = elemCount;  // workItemCount
+            DEREF(dispatchArgs, (baseIdx + 7)) = tgCountX;
+            DEREF(dispatchArgs, (baseIdx + 8)) = 1;
+            DEREF(dispatchArgs, (baseIdx + 9)) = 1;
+            DEREF(dispatchCnts, (slot)) = 2;
         }
         else
         {
             // dispatch 0: all threadgroups fit into the limit of single dimension
-            dispatchArgs[baseIdx + 0] = 0;          // tgOffset
-            dispatchArgs[baseIdx + 1] = elemCount;  // workItemCount
-            dispatchArgs[baseIdx + 2] = tgCount;
-            dispatchArgs[baseIdx + 3] = 1;
-            dispatchArgs[baseIdx + 4] = 1;
+            DEREF(dispatchArgs, (baseIdx + 0)) = 0;          // tgOffset
+            DEREF(dispatchArgs, (baseIdx + 1)) = elemCount;  // workItemCount
+            DEREF(dispatchArgs, (baseIdx + 2)) = tgCount;
+            DEREF(dispatchArgs, (baseIdx + 3)) = 1;
+            DEREF(dispatchArgs, (baseIdx + 4)) = 1;
             // dispatch 1: zeroed (unused but written)
-            dispatchArgs[baseIdx + 5] = 0;
-            dispatchArgs[baseIdx + 6] = elemCount;  // workItemCount
-            dispatchArgs[baseIdx + 7] = 0;
-            dispatchArgs[baseIdx + 8] = 1;
-            dispatchArgs[baseIdx + 9] = 1;
-            dispatchCnts[slot] = 1;
+            DEREF(dispatchArgs, (baseIdx + 5)) = 0;
+            DEREF(dispatchArgs, (baseIdx + 6)) = elemCount;  // workItemCount
+            DEREF(dispatchArgs, (baseIdx + 7)) = 0;
+            DEREF(dispatchArgs, (baseIdx + 8)) = 1;
+            DEREF(dispatchArgs, (baseIdx + 9)) = 1;
+            DEREF(dispatchCnts, (slot)) = 1;
         }
     }
 }
@@ -134,9 +134,9 @@ static uint32_t zstdgpu_GlobalExclusivePrefixSum(ZSTDGPU_RW_BUFFER_GLC(uint32_t)
         // to mark to mark whether the value is actual "sum" or "prefix"
         const uint32_t vgprInclusivePrefixEncoded = zstdgpu_Encode30BitLookbackSelf(vgprInclusivePrefix);
         #if 0
-            lookback[thisBlockIndex] = vgprInclusivePrefixEncoded;
+            DEREF(lookback, (thisBlockIndex)) = vgprInclusivePrefixEncoded;
         #else
-            InterlockedCompareStore(lookback[thisBlockIndex], 0, vgprInclusivePrefixEncoded);
+            InterlockedCompareStore(DEREF(lookback, (thisBlockIndex)), 0, vgprInclusivePrefixEncoded);
         #endif
 
         if (thisBlockIndex > 0)
@@ -148,10 +148,10 @@ static uint32_t zstdgpu_GlobalExclusivePrefixSum(ZSTDGPU_RW_BUFFER_GLC(uint32_t)
                 #if 0
                     // BUG(pamartis): this varaint of code reads incorrect values on some HW,
                     // so it looks like `globallycoherent` keyword doesn't work for reads
-                    const uint32_t prevBlockPrefixOrSumEncoded = lookback[prevBlockIndex];
+                    const uint32_t prevBlockPrefixOrSumEncoded = DEREF(lookback, (prevBlockIndex));
                 #else
                     uint32_t prevBlockPrefixOrSumEncoded;
-                    InterlockedAdd(lookback[prevBlockIndex], 0, prevBlockPrefixOrSumEncoded);
+                    InterlockedAdd(DEREF(lookback, (prevBlockIndex)), 0, prevBlockPrefixOrSumEncoded);
                 #endif
                 const uint32_t flags = zstdgpu_Decode30BitLookbackFlags(prevBlockPrefixOrSumEncoded);
                 if (flags > 0)
@@ -175,9 +175,9 @@ static uint32_t zstdgpu_GlobalExclusivePrefixSum(ZSTDGPU_RW_BUFFER_GLC(uint32_t)
             }
             const uint32_t thisBlockInclusivePrefixEncoded = zstdgpu_Encode30BitLookbackFull(thisBlockExclusivePrefix + vgprInclusivePrefix);
             #if 0
-                lookback[thisBlockIndex] = thisBlockInclusivePrefixEncoded;
+                DEREF(lookback, (thisBlockIndex)) = thisBlockInclusivePrefixEncoded;
             #else
-                InterlockedCompareStore(lookback[thisBlockIndex], vgprInclusivePrefixEncoded, thisBlockInclusivePrefixEncoded);
+                InterlockedCompareStore(DEREF(lookback, (thisBlockIndex)), vgprInclusivePrefixEncoded, thisBlockInclusivePrefixEncoded);
             #endif
         }
     }
@@ -486,31 +486,31 @@ static inline uint32_t zstdgpu_ShaderEntry_ParseFrame(ZSTDGPU_PARAM_INOUT(zstdgp
             // so, it's either DXC or IHV compiler not preserving branches with memory accesses.
             ZSTDGPU_BRANCH if (isRaw)
             {
-                outBlocksRAWRefs[outFrameInfo.rawBlockStart].offs = blockOffs;
-                outBlocksRAWRefs[outFrameInfo.rawBlockStart].size = blockSize;
+                DEREF(outBlocksRAWRefs, (outFrameInfo.rawBlockStart)).offs = blockOffs;
+                DEREF(outBlocksRAWRefs, (outFrameInfo.rawBlockStart)).size = blockSize;
 
-                outRawBlockSizes[outFrameInfo.rawBlockStart] = blockSize;
-                outGlobalBlockIndexPerRawBlock[outFrameInfo.rawBlockStart] = blockIndex;
+                DEREF(outRawBlockSizes, (outFrameInfo.rawBlockStart)) = blockSize;
+                DEREF(outGlobalBlockIndexPerRawBlock, (outFrameInfo.rawBlockStart)) = blockIndex;
             }
 
             ZSTDGPU_BRANCH if (isRle)
             {
-                outBlocksRLERefs[outFrameInfo.rleBlockStart].offs = blockOffs;
-                outBlocksRLERefs[outFrameInfo.rleBlockStart].size = blockSize;
+                DEREF(outBlocksRLERefs, (outFrameInfo.rleBlockStart)).offs = blockOffs;
+                DEREF(outBlocksRLERefs, (outFrameInfo.rleBlockStart)).size = blockSize;
 
-                outRleBlockSizes[outFrameInfo.rleBlockStart] = blockSize;
-                outGlobalBlockIndexPerRleBlock[outFrameInfo.rleBlockStart] = blockIndex;
+                DEREF(outRleBlockSizes, (outFrameInfo.rleBlockStart)) = blockSize;
+                DEREF(outGlobalBlockIndexPerRleBlock, (outFrameInfo.rleBlockStart)) = blockIndex;
             }
 
             ZSTDGPU_BRANCH if (isCmp)
             {
-                outBlocksCMPRefs[outFrameInfo.cmpBlockStart].offs = blockOffs;
-                outBlocksCMPRefs[outFrameInfo.cmpBlockStart].size = blockSize;
+                DEREF(outBlocksCMPRefs, (outFrameInfo.cmpBlockStart)).offs = blockOffs;
+                DEREF(outBlocksCMPRefs, (outFrameInfo.cmpBlockStart)).size = blockSize;
 
-                outGlobalBlockIndexPerCmpBlock[outFrameInfo.cmpBlockStart] = blockIndex;
+                DEREF(outGlobalBlockIndexPerCmpBlock, (outFrameInfo.cmpBlockStart)) = blockIndex;
             }
 
-            outPerBlockUncompressedSize[blockIndex] = isCmp ? 0 : blockSize;
+            DEREF(outPerBlockUncompressedSize, (blockIndex)) = isCmp ? 0 : blockSize;
         }
 
         // `Raw_Block` - this is an uncompressed block. `Block_Content` contains `Block_Size` bytes.
@@ -561,7 +561,7 @@ static inline void zstdgpu_ShaderEntry_ParseFrames(ZSTDGPU_PARAM_INOUT(zstdgpu_P
 
             if (srt.countBlocksOnly > 0)
             {
-                srt.inoutPerFrameSeqStreamMinIdx[threadId] = ~0u; // AMC
+                DEREF(srt.inoutPerFrameSeqStreamMinIdx, (threadId)) = ~0u; // AMC
 
                 frameInfo.rawBlockStart = 0;
                 frameInfo.rleBlockStart = 0;
@@ -571,9 +571,9 @@ static inline void zstdgpu_ShaderEntry_ParseFrames(ZSTDGPU_PARAM_INOUT(zstdgpu_P
             }
             else
             {
-                frameInfo.rawBlockStart = srt.inoutPerFrameBlockCountRAW[threadId];
-                frameInfo.rleBlockStart = srt.inoutPerFrameBlockCountRLE[threadId];
-                frameInfo.cmpBlockStart = srt.inoutPerFrameBlockCountCMP[threadId];
+                frameInfo.rawBlockStart = DEREF(srt.inoutPerFrameBlockCountRAW, (threadId));
+                frameInfo.rleBlockStart = DEREF(srt.inoutPerFrameBlockCountRLE, (threadId));
+                frameInfo.cmpBlockStart = DEREF(srt.inoutPerFrameBlockCountCMP, (threadId));
             }
 
             const uint32_t frameStatus = zstdgpu_ShaderEntry_ParseFrame(
@@ -593,10 +593,10 @@ static inline void zstdgpu_ShaderEntry_ParseFrames(ZSTDGPU_PARAM_INOUT(zstdgpu_P
 
             if (srt.countBlocksOnly > 0)
             {
-                srt.inoutPerFrameBlockCountRAW[threadId] = frameInfo.rawBlockStart;
-                srt.inoutPerFrameBlockCountRLE[threadId] = frameInfo.rleBlockStart;
-                srt.inoutPerFrameBlockCountCMP[threadId] = frameInfo.cmpBlockStart;
-                srt.inoutPerFrameBlockCountAll[threadId] = frameInfo.rawBlockStart
+                DEREF(srt.inoutPerFrameBlockCountRAW, (threadId)) = frameInfo.rawBlockStart;
+                DEREF(srt.inoutPerFrameBlockCountRLE, (threadId)) = frameInfo.rleBlockStart;
+                DEREF(srt.inoutPerFrameBlockCountCMP, (threadId)) = frameInfo.cmpBlockStart;
+                DEREF(srt.inoutPerFrameBlockCountAll, (threadId)) = frameInfo.rawBlockStart
                                                          + frameInfo.rleBlockStart
                                                          + frameInfo.cmpBlockStart;
 
@@ -611,19 +611,19 @@ static inline void zstdgpu_ShaderEntry_ParseFrames(ZSTDGPU_PARAM_INOUT(zstdgpu_P
 
                 if (WaveIsFirstLane())
                 {
-                    InterlockedAdd(srt.inoutCounters[0].Blocks_RAW, rawBlockCount);
-                    InterlockedAdd(srt.inoutCounters[0].Blocks_RLE, rleBlockCount);
-                    InterlockedAdd(srt.inoutCounters[0].Blocks_CMP, cmpBlockCount);
-                    InterlockedAdd(srt.inoutCounters[0].BlocksBytes_RAW, rawBlockByteCount);
-                    InterlockedAdd(srt.inoutCounters[0].BlocksBytes_RLE, rleBlockByteCount);
-                    InterlockedAdd(srt.inoutCounters[0].Frames, frameCount);
-                    InterlockedAdd(srt.inoutCounters[0].Frames_UncompressedByteSize, uncompSize);
+                    InterlockedAdd(DEREF(srt.inoutCounters, (0)).Blocks_RAW, rawBlockCount);
+                    InterlockedAdd(DEREF(srt.inoutCounters, (0)).Blocks_RLE, rleBlockCount);
+                    InterlockedAdd(DEREF(srt.inoutCounters, (0)).Blocks_CMP, cmpBlockCount);
+                    InterlockedAdd(DEREF(srt.inoutCounters, (0)).BlocksBytes_RAW, rawBlockByteCount);
+                    InterlockedAdd(DEREF(srt.inoutCounters, (0)).BlocksBytes_RLE, rleBlockByteCount);
+                    InterlockedAdd(DEREF(srt.inoutCounters, (0)).Frames, frameCount);
+                    InterlockedAdd(DEREF(srt.inoutCounters, (0)).Frames_UncompressedByteSize, uncompSize);
                 }
             }
             else
             {
                 // Real (block-output) pass: record this frame's accept/reject status.
-                srt.inoutFrameStatus[threadId] = frameStatus;
+                DEREF(srt.inoutFrameStatus, (threadId)) = frameStatus;
             }
         }
         else
@@ -634,16 +634,16 @@ static inline void zstdgpu_ShaderEntry_ParseFrames(ZSTDGPU_PARAM_INOUT(zstdgpu_P
                 // Count pass: this frame contributes no blocks. Write zero explicitly so the
                 // block-count prefix sum can't pick up stale counts -- these buffers are reused
                 // across requests and only their lookback regions are cleared at init.
-                srt.inoutPerFrameBlockCountRAW[threadId] = 0;
-                srt.inoutPerFrameBlockCountRLE[threadId] = 0;
-                srt.inoutPerFrameBlockCountCMP[threadId] = 0;
-                srt.inoutPerFrameBlockCountAll[threadId] = 0;
-                srt.inoutPerFrameSeqStreamMinIdx[threadId] = ~0u; // AMC
+                DEREF(srt.inoutPerFrameBlockCountRAW, (threadId)) = 0;
+                DEREF(srt.inoutPerFrameBlockCountRLE, (threadId)) = 0;
+                DEREF(srt.inoutPerFrameBlockCountCMP, (threadId)) = 0;
+                DEREF(srt.inoutPerFrameBlockCountAll, (threadId)) = 0;
+                DEREF(srt.inoutPerFrameSeqStreamMinIdx, (threadId)) = ~0u; // AMC
             }
             else
             {
                 // Real pass: record the reject status (written exactly once per frame).
-                srt.inoutFrameStatus[threadId] = kzstdgpu_FrameStatus_NotZstdFrame;
+                DEREF(srt.inoutFrameStatus, (threadId)) = kzstdgpu_FrameStatus_NotZstdFrame;
             }
         }
     }
@@ -661,35 +661,35 @@ static void zstdgpu_ShaderEntry_InitResources(ZSTDGPU_PARAM_INOUT(zstdgpu_InitRe
         // FseLLen/Offs/MLen start at 1 because we always decode "Default" tables at index 0
         if (threadId == 0)
         {
-            srt.inoutCounters[0].FseHufW                                     = 0;
-            srt.inoutCounters[0].FseLLen                                     = 1;
-            srt.inoutCounters[0].FseOffs                                     = 1;
-            srt.inoutCounters[0].FseMLen                                     = 1;
-            srt.inoutCounters[0].DecompressLiteralsGroups                    = 0;
-            srt.inoutCounters[0].HUF_WgtStreams                              = 0;
-            srt.inoutCounters[0].Seq_Streams_DecodedItems                    = 0;
-            srt.inoutCounters[0].HUF_Streams_DecodedBytes                    = 0;
-            srt.inoutCounters[0].Seq_Streams                                 = 0;
-            srt.inoutCounters[0].HUF_Streams                                 = 0;
-            srt.inoutCounters[0].HufLit                                      = 0;
-            srt.inoutCounters[0].Blocks_RAW                                  = 0;
-            srt.inoutCounters[0].Blocks_RLE                                  = 0;
-            srt.inoutCounters[0].Blocks_CMP                                  = 0;
-            srt.inoutCounters[0].BlocksBytes_RAW                             = 0;
-            srt.inoutCounters[0].BlocksBytes_RLE                             = 0;
-            srt.inoutCounters[0].Frames                                      = 0;
-            srt.inoutCounters[0].Frames_UncompressedByteSize                 = 0;
+            DEREF(srt.inoutCounters, (0)).FseHufW                                     = 0;
+            DEREF(srt.inoutCounters, (0)).FseLLen                                     = 1;
+            DEREF(srt.inoutCounters, (0)).FseOffs                                     = 1;
+            DEREF(srt.inoutCounters, (0)).FseMLen                                     = 1;
+            DEREF(srt.inoutCounters, (0)).DecompressLiteralsGroups                    = 0;
+            DEREF(srt.inoutCounters, (0)).HUF_WgtStreams                              = 0;
+            DEREF(srt.inoutCounters, (0)).Seq_Streams_DecodedItems                    = 0;
+            DEREF(srt.inoutCounters, (0)).HUF_Streams_DecodedBytes                    = 0;
+            DEREF(srt.inoutCounters, (0)).Seq_Streams                                 = 0;
+            DEREF(srt.inoutCounters, (0)).HUF_Streams                                 = 0;
+            DEREF(srt.inoutCounters, (0)).HufLit                                      = 0;
+            DEREF(srt.inoutCounters, (0)).Blocks_RAW                                  = 0;
+            DEREF(srt.inoutCounters, (0)).Blocks_RLE                                  = 0;
+            DEREF(srt.inoutCounters, (0)).Blocks_CMP                                  = 0;
+            DEREF(srt.inoutCounters, (0)).BlocksBytes_RAW                             = 0;
+            DEREF(srt.inoutCounters, (0)).BlocksBytes_RLE                             = 0;
+            DEREF(srt.inoutCounters, (0)).Frames                                      = 0;
+            DEREF(srt.inoutCounters, (0)).Frames_UncompressedByteSize                 = 0;
         }
         return;
     }
 
-    const uint32_t cmpBlockCnt = srt.inoutCounters[0].Blocks_CMP;
+    const uint32_t cmpBlockCnt = DEREF(srt.inoutCounters, (0)).Blocks_CMP;
 
     ZSTDGPU_FOR_WORK_ITEMS(i, 1, threadId, kzstdgpu_TgSizeX_InitCounters)
     {
-        srt.inoutFseInfos[zstdgpu_ComputeFseIndexLLen(0, cmpBlockCnt)] = zstdgpu_CreateFseInfo(kzstdgpu_FseDefaultProbCount_LLen, kzstdgpu_FseDefaultProbAccuracy_LLen);
-        srt.inoutFseInfos[zstdgpu_ComputeFseIndexOffs(0, cmpBlockCnt)] = zstdgpu_CreateFseInfo(kzstdgpu_FseDefaultProbCount_Offs, kzstdgpu_FseDefaultProbAccuracy_Offs);
-        srt.inoutFseInfos[zstdgpu_ComputeFseIndexMLen(0, cmpBlockCnt)] = zstdgpu_CreateFseInfo(kzstdgpu_FseDefaultProbCount_MLen, kzstdgpu_FseDefaultProbAccuracy_MLen);
+        DEREF(srt.inoutFseInfos, (zstdgpu_ComputeFseIndexLLen(0, cmpBlockCnt))) = zstdgpu_CreateFseInfo(kzstdgpu_FseDefaultProbCount_LLen, kzstdgpu_FseDefaultProbAccuracy_LLen);
+        DEREF(srt.inoutFseInfos, (zstdgpu_ComputeFseIndexOffs(0, cmpBlockCnt))) = zstdgpu_CreateFseInfo(kzstdgpu_FseDefaultProbCount_Offs, kzstdgpu_FseDefaultProbAccuracy_Offs);
+        DEREF(srt.inoutFseInfos, (zstdgpu_ComputeFseIndexMLen(0, cmpBlockCnt))) = zstdgpu_CreateFseInfo(kzstdgpu_FseDefaultProbCount_MLen, kzstdgpu_FseDefaultProbAccuracy_MLen);
     }
 
     // Initialize 256 dense RLE entries at the beginning of FSE element buffers.
@@ -697,11 +697,11 @@ static void zstdgpu_ShaderEntry_InitResources(ZSTDGPU_PARAM_INOUT(zstdgpu_InitRe
     // FseInfos[S] = {0, 0}: accuracyLog=0 so decode reads 0 bits for initial state -> state=0 -> reads element[0].
     ZSTDGPU_FOR_WORK_ITEMS(i, kzstdgpu_FseRleTableCount, threadId, kzstdgpu_TgSizeX_InitCounters)
     {
-        srt.inoutFseElems[i] = zstdgpu_PackFseElem(i, 0, 0);
+        DEREF(srt.inoutFseElems, (i)) = zstdgpu_PackFseElem(i, 0, 0);
 
         zstdgpu_FseInfo rleInfo;
         rleInfo.fseProbCountAndAccuracyLog2 = 0;
-        srt.inoutFseInfos[i] = rleInfo;
+        DEREF(srt.inoutFseInfos, (i)) = rleInfo;
     }
 
     // NOTE(pamartis): We start from `srt.cmpBlockCount * kzstdgpu_MaxCount_FseProbs` because
@@ -715,7 +715,7 @@ static void zstdgpu_ShaderEntry_InitResources(ZSTDGPU_PARAM_INOUT(zstdgpu_InitRe
 
     ZSTDGPU_FOR_WORK_ITEMS(i, kzstdgpu_FseDefaultProbCount_LLen, threadId, kzstdgpu_TgSizeX_InitCounters)
     {
-        srt.inoutFseProbs[dstStart + i] = kzstdgpuFseProbsDefault[srcStart + i];
+        DEREF(srt.inoutFseProbs, (dstStart + i)) = kzstdgpuFseProbsDefault[srcStart + i];
     }
 
     dstStart += dstTableStride;
@@ -723,7 +723,7 @@ static void zstdgpu_ShaderEntry_InitResources(ZSTDGPU_PARAM_INOUT(zstdgpu_InitRe
 
     ZSTDGPU_FOR_WORK_ITEMS(i, kzstdgpu_FseDefaultProbCount_Offs, threadId, kzstdgpu_TgSizeX_InitCounters)
     {
-        srt.inoutFseProbs[dstStart + i] = kzstdgpuFseProbsDefault[srcStart + i];
+        DEREF(srt.inoutFseProbs, (dstStart + i)) = kzstdgpuFseProbsDefault[srcStart + i];
     }
 
     dstStart += dstTableStride;
@@ -731,7 +731,7 @@ static void zstdgpu_ShaderEntry_InitResources(ZSTDGPU_PARAM_INOUT(zstdgpu_InitRe
 
     ZSTDGPU_FOR_WORK_ITEMS(i, kzstdgpu_FseDefaultProbCount_MLen, threadId, kzstdgpu_TgSizeX_InitCounters)
     {
-        srt.inoutFseProbs[dstStart + i] = kzstdgpuFseProbsDefault[srcStart + i];
+        DEREF(srt.inoutFseProbs, (dstStart + i)) = kzstdgpuFseProbsDefault[srcStart + i];
     }
 }
 
@@ -794,7 +794,7 @@ static void zstdgpu_ParseFseHeader(ZSTDGPU_PARAM_INOUT(zstdgpu_Forward_BitBuffer
         // cumulated distribution, it counts as one."
         remain -= prob < 0 ? -prob : prob;
 
-        outFseProb[outFseProbTableOffset + symbol] = (int16_t)prob;
+        DEREF(outFseProb, (outFseProbTableOffset + symbol)) = (int16_t)prob;
 
         symbol += 1;
 
@@ -811,7 +811,7 @@ static void zstdgpu_ParseFseHeader(ZSTDGPU_PARAM_INOUT(zstdgpu_Forward_BitBuffer
             {
                 for (uint32_t i = 0; i < repeat && symbol < kzstdgpu_MaxCount_FseProbs; ++i)
                 {
-                    outFseProb[outFseProbTableOffset + symbol] = 0;
+                    DEREF(outFseProb, (outFseProbTableOffset + symbol)) = 0;
                     symbol += 1;
                 }
                 if (repeat == 3)
@@ -833,7 +833,7 @@ static void zstdgpu_ParseFseHeader(ZSTDGPU_PARAM_INOUT(zstdgpu_Forward_BitBuffer
         // If the last symbol makes cumulated total go above 1 << Accuracy_Log, distribution is considered corrupted."
         ZSTDGPU_BREAK(); // Corruption
     }
-    outFseInfo[outFseTableIndex] = zstdgpu_CreateFseInfo(symbol, accuracyLog2);
+    DEREF(outFseInfo, (outFseTableIndex)) = zstdgpu_CreateFseInfo(symbol, accuracyLog2);
 }
 
 #ifdef __hlsl_dx_compiler
@@ -883,7 +883,7 @@ static uint32_t zstdgpu_PropagateFseTableIndex(ZSTDGPU_RW_BUFFER_GLC(uint32_t) i
     {
         if (WaveIsFirstLane())
         {
-            InterlockedCompareStore(inoutLookback[thisBlockIndex], 0, zstdgpu_Encode31BitLookbackFull(kzstdgpu_FseProbTableIndex_Unused));
+            InterlockedCompareStore(DEREF(inoutLookback, (thisBlockIndex)), 0, zstdgpu_Encode31BitLookbackFull(kzstdgpu_FseProbTableIndex_Unused));
         }
     }
 
@@ -899,7 +899,7 @@ static uint32_t zstdgpu_PropagateFseTableIndex(ZSTDGPU_RW_BUFFER_GLC(uint32_t) i
         const uint32_t xLast = WaveReadLaneAt(x, lastLocalIndex);
         if (WaveIsFirstLane())
         {
-            InterlockedCompareStore(inoutLookback[thisBlockIndex], 0, zstdgpu_Encode31BitLookbackFull(xLast));
+            InterlockedCompareStore(DEREF(inoutLookback, (thisBlockIndex)), 0, zstdgpu_Encode31BitLookbackFull(xLast));
         }
     }
 
@@ -923,7 +923,7 @@ static uint32_t zstdgpu_PropagateFseTableIndex(ZSTDGPU_RW_BUFFER_GLC(uint32_t) i
             while (needsLookbackLoop)
             {
                 uint32_t lookbackIndex;
-                InterlockedAdd(inoutLookback[prevBlockIndex], 0, lookbackIndex);
+                InterlockedAdd(DEREF(inoutLookback, (prevBlockIndex)), 0, lookbackIndex);
                 if (zstdgpu_Decode31BitLookbackFlags(lookbackIndex) > 0)
                 {
                     const uint32_t maskedLookbackIndex = zstdgpu_Decode31BitLookbackValue(lookbackIndex);
@@ -1055,7 +1055,7 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
         const uint32_t hufLitStreamCount = (literalBlockType >= 2u) ? ((0x0u == literalBlockSzFmt) ? 1u : 4u) : 0u;
         const uint32_t hufLitStreamStart = zstdgpu_OrderedAppendIndex(srt.inoutLitStreamCountPrefixLookback, hufLitStreamCount, threadId, kzstdgpu_TgSizeX_ParseCompressedBlocks);
     #else
-        const uint32_t hufLitStreamStart = srt.inoutCounters[0].HUF_Streams;
+        const uint32_t hufLitStreamStart = DEREF(srt.inoutCounters, (0)).HUF_Streams;
     #endif
 
     uint32_t regeneratedSize = 0;
@@ -1153,8 +1153,8 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
         uint32_t regeneratedOffsetPerWave = 0;
         if (WaveIsFirstLane())
         {
-            InterlockedAdd(srt.inoutCounters[0].HUF_Streams, streamCountPerWave);
-            InterlockedAdd(srt.inoutCounters[0].HUF_Streams_DecodedBytes, regeneratedSizePerWave, regeneratedOffsetPerWave);
+            InterlockedAdd(DEREF(srt.inoutCounters, (0)).HUF_Streams, streamCountPerWave);
+            InterlockedAdd(DEREF(srt.inoutCounters, (0)).HUF_Streams_DecodedBytes, regeneratedSizePerWave, regeneratedOffsetPerWave);
         }
         const uint32_t regeneratedOffset = WaveReadLaneFirst(regeneratedOffsetPerWave) + WavePrefixSum(regeneratedSize);
 
@@ -1203,7 +1203,7 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
                     if (WaveIsFirstLane())                                                  \
                     {                                                                       \
                         InterlockedAdd(                                                     \
-                            srt.inoutCounters[0].Fse##name,                                 \
+                            DEREF(srt.inoutCounters, (0)).Fse##name,                                 \
                             fseWaveTableCount##name,                                        \
                             fseWaveTableStart##name                                         \
                         );                                                                  \
@@ -1223,11 +1223,11 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
                 fseCompressedHuffmanWeights.size = headerByte - (fseCompressedHuffmanWeights.offs - fseProbOffs);
                 zstdgpu_Forward_BitBuffer_Skip(buffer, fseCompressedHuffmanWeights.size);
 
-                srt.inoutHufRefs[fseTableIndexHufW] = fseCompressedHuffmanWeights;
+                DEREF(srt.inoutHufRefs, (fseTableIndexHufW)) = fseCompressedHuffmanWeights;
 
                 // NOTE(pamartis): We write zero here to initialize `counts` because the actual number
                 // of Huffman Weights becomes known after they are decompressed (which happens in another kernel)
-                srt.inoutDecompressedHuffmanWeightCount[fseTableIndexHufW] = 0;
+                DEREF(srt.inoutDecompressedHuffmanWeightCount, (fseTableIndexHufW)) = 0;
 
                 ZSTDGPU_ASSERT(fseCompressedHuffmanWeights.offs - fseProbOffs < headerByte);
 
@@ -1250,7 +1250,7 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
                 uint32_t uncompressedHuffmanWeightsStartPerWave = 0;
                 if (WaveIsFirstLane())
                 {
-                    InterlockedAdd(srt.inoutCounters[0].HUF_WgtStreams, uncompressedHuffmanWeightsCountPerWave, uncompressedHuffmanWeightsStartPerWave);
+                    InterlockedAdd(DEREF(srt.inoutCounters, (0)).HUF_WgtStreams, uncompressedHuffmanWeightsCountPerWave, uncompressedHuffmanWeightsStartPerWave);
                 }
                 fseTableIndexHufW = WaveReadLaneFirst(uncompressedHuffmanWeightsStartPerWave) + WavePrefixCountBits(true);
 
@@ -1266,7 +1266,7 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
                 // uncompressed references
                 fseTableIndexHufW = compressedBlockCount - 1 - fseTableIndexHufW;
 
-                srt.inoutHufRefs[fseTableIndexHufW] = uncompressedHuffmanWeights;
+                DEREF(srt.inoutHufRefs, (fseTableIndexHufW)) = uncompressedHuffmanWeights;
                 zstdgpu_TypedStoreU8(srt.inoutDecompressedHuffmanWeightCount, fseTableIndexHufW, huffWeightCnt);
 
                 // +1: account for `headerByte`
@@ -1280,10 +1280,10 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
 
         if (1 == streamCount)
         {
-            srt.inoutLitRefs[hufLitStreamStart].src.offs = zstdgpu_Forward_BitBuffer_GetByteOffset(buffer);
-            srt.inoutLitRefs[hufLitStreamStart].src.size = compressedSize;
-            srt.inoutLitRefs[hufLitStreamStart].dst.offs = regeneratedOffset;
-            srt.inoutLitRefs[hufLitStreamStart].dst.size = regeneratedSize;
+            DEREF(srt.inoutLitRefs, (hufLitStreamStart)).src.offs = zstdgpu_Forward_BitBuffer_GetByteOffset(buffer);
+            DEREF(srt.inoutLitRefs, (hufLitStreamStart)).src.size = compressedSize;
+            DEREF(srt.inoutLitRefs, (hufLitStreamStart)).dst.offs = regeneratedOffset;
+            DEREF(srt.inoutLitRefs, (hufLitStreamStart)).dst.size = regeneratedSize;
             zstdgpu_Forward_BitBuffer_Skip(buffer, compressedSize);
         }
         else
@@ -1293,9 +1293,9 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
             const uint32_t litStream1Size = zstdgpu_Forward_BitBuffer_GetNoRefill(buffer, 16);
             const uint32_t litStream2Size = zstdgpu_Forward_BitBuffer_Get(buffer, 16);
 
-            srt.inoutLitRefs[hufLitStreamStart + 0].src.size = litStream0Size;
-            srt.inoutLitRefs[hufLitStreamStart + 1].src.size = litStream1Size;
-            srt.inoutLitRefs[hufLitStreamStart + 2].src.size = litStream2Size;
+            DEREF(srt.inoutLitRefs, (hufLitStreamStart + 0)).src.size = litStream0Size;
+            DEREF(srt.inoutLitRefs, (hufLitStreamStart + 1)).src.size = litStream1Size;
+            DEREF(srt.inoutLitRefs, (hufLitStreamStart + 2)).src.size = litStream2Size;
 
             compressedSize -= 6;
 
@@ -1305,32 +1305,32 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
 
             ZSTDGPU_ASSERT(compressedSize >= compressedSize3Streams);
             const uint32_t litStream3Size = compressedSize - compressedSize3Streams;
-            srt.inoutLitRefs[hufLitStreamStart + 3].src.size = litStream3Size;
+            DEREF(srt.inoutLitRefs, (hufLitStreamStart + 3)).src.size = litStream3Size;
 
             const uint32_t dstSize = (regeneratedSize + 3) / 4;
             uint32_t dstOffs = regeneratedOffset;
 
-            srt.inoutLitRefs[hufLitStreamStart + 0].src.offs = zstdgpu_Forward_BitBuffer_GetByteOffset(buffer);
-            srt.inoutLitRefs[hufLitStreamStart + 0].dst.offs = dstOffs;
-            srt.inoutLitRefs[hufLitStreamStart + 0].dst.size = dstSize;
+            DEREF(srt.inoutLitRefs, (hufLitStreamStart + 0)).src.offs = zstdgpu_Forward_BitBuffer_GetByteOffset(buffer);
+            DEREF(srt.inoutLitRefs, (hufLitStreamStart + 0)).dst.offs = dstOffs;
+            DEREF(srt.inoutLitRefs, (hufLitStreamStart + 0)).dst.size = dstSize;
             dstOffs += dstSize;
             zstdgpu_Forward_BitBuffer_Skip(buffer, litStream0Size);
 
-            srt.inoutLitRefs[hufLitStreamStart + 1].src.offs = zstdgpu_Forward_BitBuffer_GetByteOffset(buffer);
-            srt.inoutLitRefs[hufLitStreamStart + 1].dst.offs = dstOffs;
-            srt.inoutLitRefs[hufLitStreamStart + 1].dst.size = dstSize;
+            DEREF(srt.inoutLitRefs, (hufLitStreamStart + 1)).src.offs = zstdgpu_Forward_BitBuffer_GetByteOffset(buffer);
+            DEREF(srt.inoutLitRefs, (hufLitStreamStart + 1)).dst.offs = dstOffs;
+            DEREF(srt.inoutLitRefs, (hufLitStreamStart + 1)).dst.size = dstSize;
             dstOffs += dstSize;
             zstdgpu_Forward_BitBuffer_Skip(buffer, litStream1Size);
 
-            srt.inoutLitRefs[hufLitStreamStart + 2].src.offs = zstdgpu_Forward_BitBuffer_GetByteOffset(buffer);
-            srt.inoutLitRefs[hufLitStreamStart + 2].dst.offs = dstOffs;
-            srt.inoutLitRefs[hufLitStreamStart + 2].dst.size = dstSize;
+            DEREF(srt.inoutLitRefs, (hufLitStreamStart + 2)).src.offs = zstdgpu_Forward_BitBuffer_GetByteOffset(buffer);
+            DEREF(srt.inoutLitRefs, (hufLitStreamStart + 2)).dst.offs = dstOffs;
+            DEREF(srt.inoutLitRefs, (hufLitStreamStart + 2)).dst.size = dstSize;
             dstOffs += dstSize;
             zstdgpu_Forward_BitBuffer_Skip(buffer, litStream2Size);
 
-            srt.inoutLitRefs[hufLitStreamStart + 3].src.offs = zstdgpu_Forward_BitBuffer_GetByteOffset(buffer);
-            srt.inoutLitRefs[hufLitStreamStart + 3].dst.offs = dstOffs;
-            srt.inoutLitRefs[hufLitStreamStart + 3].dst.size = regeneratedSize - dstSize * 3;
+            DEREF(srt.inoutLitRefs, (hufLitStreamStart + 3)).src.offs = zstdgpu_Forward_BitBuffer_GetByteOffset(buffer);
+            DEREF(srt.inoutLitRefs, (hufLitStreamStart + 3)).dst.offs = dstOffs;
+            DEREF(srt.inoutLitRefs, (hufLitStreamStart + 3)).dst.size = regeneratedSize - dstSize * 3;
             zstdgpu_Forward_BitBuffer_Skip(buffer, litStream3Size);
         }
     }
@@ -1344,20 +1344,20 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
     //         of the remaining portion of literals not copied via sequence execution.
     const uint32_t blockIndexInFrame = srt.inGlobalBlockIndexPerCmpBlock[threadId];
 
-    srt.inoutBlockSizePrefix[blockIndexInFrame] = zstdgpu_DecodeLitSize(outBlockData.literal.size);
+    DEREF(srt.inoutBlockSizePrefix, (blockIndexInFrame)) = zstdgpu_DecodeLitSize(outBlockData.literal.size);
 
     // A "HufLit" is a literal block that carries a Huffman Table (literalBlockType == 2, i.e. FullTree).
     // Its hufLitId (compacted, in cmpLit-encounter order) keys the per-HT literal stream range.
     const bool isHufLit = (literalBlockType == 2);
 
     #ifndef __hlsl_dx_compiler
-        const uint32_t hufLitId = srt.inoutCounters[0].HufLit;
+        const uint32_t hufLitId = DEREF(srt.inoutCounters, (0)).HufLit;
     #endif
 
     const uint32_t hufLitCountPerWave = WaveActiveCountBits(isHufLit);
     if (WaveIsFirstLane())
     {
-        InterlockedAdd(srt.inoutCounters[0].HufLit, hufLitCountPerWave);
+        InterlockedAdd(DEREF(srt.inoutCounters, (0)).HufLit, hufLitCountPerWave);
     }
 
     #ifdef __hlsl_dx_compiler
@@ -1376,9 +1376,9 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
     //
     ZSTDGPU_BRANCH if (isHufLit)
     {
-        srt.inoutHufWIdToHufLitId[fseTableIndexHufW]  = hufLitId; // write index is not cmpBlockIdx
-        srt.inoutHufLitIdToLitStreamId[hufLitId]      = outBlockData.litStreamIndex;
-        srt.inoutHufLitIdToHufWId_DBG[hufLitId]       = fseTableIndexHufW; // used by reference_store
+        DEREF(srt.inoutHufWIdToHufLitId, (fseTableIndexHufW))  = hufLitId; // write index is not cmpBlockIdx
+        DEREF(srt.inoutHufLitIdToLitStreamId, (hufLitId))      = outBlockData.litStreamIndex;
+        DEREF(srt.inoutHufLitIdToHufWId_DBG, (hufLitId))       = fseTableIndexHufW; // used by reference_store
     }
 
     // `Sequences_Section_Header`
@@ -1418,14 +1418,14 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
     uint32_t fseTableIndexMLen = kzstdgpu_FseProbTableIndex_Unused;
 
     #ifndef __hlsl_dx_compiler
-        const uint32_t seqStreamIndex = srt.inoutCounters[0].Seq_Streams;
-        const uint32_t seqIndex = srt.inoutCounters[0].Seq_Streams_DecodedItems;
+        const uint32_t seqStreamIndex = DEREF(srt.inoutCounters, (0)).Seq_Streams;
+        const uint32_t seqIndex = DEREF(srt.inoutCounters, (0)).Seq_Streams_DecodedItems;
     #endif
 
     if (WaveIsFirstLane())
     {
-        InterlockedAdd(srt.inoutCounters[0].Seq_Streams, waveSeqStreamCount);
-        InterlockedAdd(srt.inoutCounters[0].Seq_Streams_DecodedItems, waveSeqCount);
+        InterlockedAdd(DEREF(srt.inoutCounters, (0)).Seq_Streams, waveSeqStreamCount);
+        InterlockedAdd(DEREF(srt.inoutCounters, (0)).Seq_Streams_DecodedItems, waveSeqCount);
     }
 
     #ifdef __hlsl_dx_compiler
@@ -1452,7 +1452,7 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
         const uint32_t compressionModes = zstdgpu_Forward_BitBuffer_Get(buffer, 8);
 
         outBlockData.seqStreamIndex = seqStreamIndex;
-        srt.inoutPerSeqStreamSeqStart[outBlockData.seqStreamIndex] = seqIndex;
+        DEREF(srt.inoutPerSeqStreamSeqStart, (outBlockData.seqStreamIndex)) = seqIndex;
 
         if (0 != zstdgpu_BitFieldExtractU32(compressionModes, 0, 2))
         {
@@ -1487,8 +1487,8 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
         #undef ALLOCATE_FSE_TABLE_INDEX
 
         const uint32_t offs = zstdgpu_Forward_BitBuffer_GetByteOffset(buffer);
-        srt.inoutSeqStreamToRef[outBlockData.seqStreamIndex].offs = offs;
-        srt.inoutSeqStreamToRef[outBlockData.seqStreamIndex].size = buffer.datasz - offs;
+        DEREF(srt.inoutSeqStreamToRef, (outBlockData.seqStreamIndex)).offs = offs;
+        DEREF(srt.inoutSeqStreamToRef, (outBlockData.seqStreamIndex)).size = buffer.datasz - offs;
 
         // NOTE(pamartis): given the prefix sum (exclusive) of compressed block counts in each frame (srt.inPerFrameBlockCountCMP)
         // each threadId (compressed block index) does a binary search of its ZSTD frame index
@@ -1497,19 +1497,19 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
             const uint32_t frameIndex = zstdgpu_BinarySearch(srt.inPerFrameBlockCountCMP, 0, srt.frameCount, threadId);
 
             // TODO (pamartis): Add scalarisation loop if needed
-            InterlockedMin(srt.inoutPerFrameSeqStreamMinIdx[frameIndex], outBlockData.seqStreamIndex);
+            InterlockedMin(DEREF(srt.inoutPerFrameSeqStreamMinIdx, (frameIndex)), outBlockData.seqStreamIndex);
         }
     }
 
     if (0 != seqCount)
     {
-        srt.inoutSeqStreamToLLenFseId[outBlockData.seqStreamIndex] = fseTableIndexLLen;
-        srt.inoutSeqStreamToOffsFseId[outBlockData.seqStreamIndex] = fseTableIndexOffs;
-        srt.inoutSeqStreamToMLenFseId[outBlockData.seqStreamIndex] = fseTableIndexMLen;
-        srt.inoutSeqStreamToBlockId[outBlockData.seqStreamIndex]   = blockIndexInFrame;
+        DEREF(srt.inoutSeqStreamToLLenFseId, (outBlockData.seqStreamIndex)) = fseTableIndexLLen;
+        DEREF(srt.inoutSeqStreamToOffsFseId, (outBlockData.seqStreamIndex)) = fseTableIndexOffs;
+        DEREF(srt.inoutSeqStreamToMLenFseId, (outBlockData.seqStreamIndex)) = fseTableIndexMLen;
+        DEREF(srt.inoutSeqStreamToBlockId, (outBlockData.seqStreamIndex))   = blockIndexInFrame;
     }
 
-    srt.inoutCompressedBlocks[threadId] = outBlockData;
+    DEREF(srt.inoutCompressedBlocks, (threadId)) = outBlockData;
 }
 
 // LDS partitioning macro list for FSE Table Initialisation (default shader)
@@ -1777,7 +1777,7 @@ static void zstdgpu_ShaderEntry_InitFseTable(ZSTDGPU_PARAM_INOUT(zstdgpu_InitFse
 #if IS_MULTI_WAVE && (ZSTD_BITCNT_NSTATE_METHOD == ZSTD_BITCNT_NSTATE_METHOD_DEFAULT)
             zstdgpu_LdsStoreU32(GS_SpreadSymbols + negativeFrqSymIndex, symbol);
 #else
-            srt.inoutFseElems[tblDataOffset + negativeFrqSymIndex] = zstdgpu_PackFseElem(symbol, 0, 0);
+            DEREF(srt.inoutFseElems, (tblDataOffset + negativeFrqSymIndex)) = zstdgpu_PackFseElem(symbol, 0, 0);
 #endif
         }
 
@@ -1884,7 +1884,7 @@ static void zstdgpu_ShaderEntry_InitFseTable(ZSTDGPU_PARAM_INOUT(zstdgpu_InitFse
 #if IS_MULTI_WAVE && (ZSTD_BITCNT_NSTATE_METHOD == ZSTD_BITCNT_NSTATE_METHOD_DEFAULT)
             zstdgpu_LdsStoreU32(GS_SpreadSymbols + positiveFrqSymIndex, symbol);
 #else
-            srt.inoutFseElems[tblDataOffset + positiveFrqSymIndex] = zstdgpu_PackFseElem(symbol, 0, 0);
+            DEREF(srt.inoutFseElems, (tblDataOffset + positiveFrqSymIndex)) = zstdgpu_PackFseElem(symbol, 0, 0);
 #endif
         }
     }
@@ -1935,7 +1935,7 @@ static void zstdgpu_ShaderEntry_InitFseTable(ZSTDGPU_PARAM_INOUT(zstdgpu_InitFse
 
             for (uint32_t j = 0; j < tblAllDataCount; ++j)
             {
-                if (symbol == zstdgpu_FseElem_Symbol(srt.inoutFseElems[tblDataOffset + j]))
+                if (symbol == zstdgpu_FseElem_Symbol(DEREF(srt.inoutFseElems, (tblDataOffset + j))))
                 {
                     uint32_t nstate = counter ++;
                     uint32_t bitcnt = accuracyLog2 - zstdgpu_FindFirstBitHiU32(nstate);
@@ -1943,7 +1943,7 @@ static void zstdgpu_ShaderEntry_InitFseTable(ZSTDGPU_PARAM_INOUT(zstdgpu_InitFse
                     nstate <<= bitcnt;
                     nstate  -= tblAllDataCount;
 
-                    srt.inoutFseElems[tblDataOffset + j] = zstdgpu_PackFseElem(symbol, bitcnt, nstate);
+                    DEREF(srt.inoutFseElems, (tblDataOffset + j)) = zstdgpu_PackFseElem(symbol, bitcnt, nstate);
                 }
             }
         }
@@ -2070,7 +2070,7 @@ static void zstdgpu_ShaderEntry_InitFseTable(ZSTDGPU_PARAM_INOUT(zstdgpu_InitFse
     uint32_t waveOffset = 0;
     ZSTDGPU_FOR_WORK_ITEMS(workItemId, tblAllDataCount, i, kzstdgpu_TgSizeX_InitFseTable)
     {
-        const uint32_t symbol = zstdgpu_FseElem_Symbol(srt.inoutFseElems[tblDataOffset + workItemId]);
+        const uint32_t symbol = zstdgpu_FseElem_Symbol(DEREF(srt.inoutFseElems, (tblDataOffset + workItemId)));
 
         const uint32_t symbolAndIndex = symbol | (workItemId << 8);
         GS_CompactedPositiveFrqPrefixSumAndSymbols[workItemId] = symbolAndIndex;
@@ -2168,7 +2168,7 @@ static void zstdgpu_ShaderEntry_InitFseTable(ZSTDGPU_PARAM_INOUT(zstdgpu_InitFse
         nstate <<= bitcnt;
         nstate  -= tblAllDataCount;
 
-        srt.inoutFseElems[tblDataOffset + workItemId] = zstdgpu_PackFseElem(symbol, bitcnt, nstate);
+        DEREF(srt.inoutFseElems, (tblDataOffset + workItemId)) = zstdgpu_PackFseElem(symbol, bitcnt, nstate);
     }
 
 #elif ZSTD_BITCNT_NSTATE_METHOD == ZSTD_BITCNT_NSTATE_METHOD_DEFAULT
@@ -2194,7 +2194,7 @@ static void zstdgpu_ShaderEntry_InitFseTable(ZSTDGPU_PARAM_INOUT(zstdgpu_InitFse
         // ZSTDGPU_INIT_FSE_TABLE_LDS_MULTI_WAVE).
         const uint32_t symbol = zstdgpu_LdsLoadU32(GS_SpreadSymbols + workItemId);
 #else
-        const uint32_t symbol = zstdgpu_FseElem_Symbol(srt.inoutFseElems[tblDataOffset + workItemId]);
+        const uint32_t symbol = zstdgpu_FseElem_Symbol(DEREF(srt.inoutFseElems, (tblDataOffset + workItemId)));
 #endif
 
         zstdgpu_GroupBallotLdsStore(laneCnt, symbol, GS_SymbolBitMasks, kzstdgpu_MaxCount_FseElemsOneDigitBits, waveOfs, 0);
@@ -2219,7 +2219,7 @@ static void zstdgpu_ShaderEntry_InitFseTable(ZSTDGPU_PARAM_INOUT(zstdgpu_InitFse
         // Multi-wave: read the symbol from the LDS handoff (see the transpose loop above).
         const uint32_t symbol = zstdgpu_LdsLoadU32(GS_SpreadSymbols + workItemId);
 #else
-        const uint32_t symbol = zstdgpu_FseElem_Symbol(srt.inoutFseElems[tblDataOffset + workItemId]);
+        const uint32_t symbol = zstdgpu_FseElem_Symbol(DEREF(srt.inoutFseElems, (tblDataOffset + workItemId)));
 #endif
 
         #define FetchBitsAndAccumulateMask(mask, bits, storage, bitIdx, uintId) \
@@ -2266,7 +2266,7 @@ static void zstdgpu_ShaderEntry_InitFseTable(ZSTDGPU_PARAM_INOUT(zstdgpu_InitFse
         nstate <<= bitcnt;
         nstate  -= tblAllDataCount;
 
-        srt.inoutFseElems[tblDataOffset + workItemId] = zstdgpu_PackFseElem(symbol, bitcnt, nstate);
+        DEREF(srt.inoutFseElems, (tblDataOffset + workItemId)) = zstdgpu_PackFseElem(symbol, bitcnt, nstate);
     }
 
 #endif
@@ -2421,7 +2421,7 @@ static void zstdgpu_ShaderEntry_DecodeHuffmanWeights(ZSTDGPU_PARAM_INOUT(zstdgpu
     zstdgpu_Forward_BitBuffer_InitWithSegment(bitBuffer, srt.inCompressedData, srt.inHufRefs[hufTableIndex], srt.compressedBufferSizeInBytes);
 
     const uint32_t hufTableOffset = hufTableIndex * kzstdgpu_MaxCount_HuffmanWeights;
-    const uint32_t hufTableWeightCount = srt.inoutDecompressedHuffmanWeightCount[hufTableIndex];
+    const uint32_t hufTableWeightCount = DEREF(srt.inoutDecompressedHuffmanWeightCount, (hufTableIndex));
 
     // TODO(pamartis): this is largely vanilla implementation, we don't need to do full loop
     // and limit ourselves to reading 4 bits one by one.
@@ -2947,7 +2947,7 @@ void zstdgpu_DecompressHuffmanCompressedLiterals(ZSTDGPU_RO_RAW_BUFFER(uint32_t)
             dword |= symbol << 24;
             zstdgpu_HuffmanStream_Consume(stream, bitcnt);
 
-            DecompressedLiteralsAsDwords[dwordIdx] = dword;
+            DEREF(DecompressedLiteralsAsDwords, (dwordIdx)) = dword;
         }
 
         // Tail bytes (up to 3) after the last dword-aligned output address
@@ -3128,7 +3128,7 @@ static void zstdgpu_ShaderEntry_DecompressSequences_MultiStream(ZSTDGPU_PARAM_IN
     ZSTDGPU_BACKWARD_BITBUF(InitWithSegment)(bitBuffer, srt.inCompressedData, seqRef.src);
 
     // NOTE: the final block size will be computed as SUM(literalSize, totalMLen)
-    const uint32_t literalSize = srt.inoutBlockSizePrefix[seqRef.blockId];
+    const uint32_t literalSize = DEREF(srt.inoutBlockSizePrefix, (seqRef.blockId));
     uint32_t totalSize = 0;
     uint32_t totalMLen = 0;
 
@@ -3194,9 +3194,9 @@ static void zstdgpu_ShaderEntry_DecompressSequences_MultiStream(ZSTDGPU_PARAM_IN
                 ZSTDGPU_BACKWARD_BITBUF(Refill)(bitBuffer, 32u);
             }
 
-            srt.inoutDecompressedSequenceLLen[i] = llen;
-            srt.inoutDecompressedSequenceMLen[i] = mlen;
-            srt.inoutDecompressedSequenceOffs[i] = offs;
+            DEREF(srt.inoutDecompressedSequenceLLen, (i)) = llen;
+            DEREF(srt.inoutDecompressedSequenceMLen, (i)) = mlen;
+            DEREF(srt.inoutDecompressedSequenceOffs, (i)) = offs;
         }
 
         // Now handle the final (or only) sequence in the current block.
@@ -3215,18 +3215,18 @@ static void zstdgpu_ShaderEntry_DecompressSequences_MultiStream(ZSTDGPU_PARAM_IN
             totalSize += llen + mlen;
             totalMLen += mlen;
 
-            srt.inoutDecompressedSequenceLLen[i] = llen;
-            srt.inoutDecompressedSequenceMLen[i] = mlen;
-            srt.inoutDecompressedSequenceOffs[i] = offs;
+            DEREF(srt.inoutDecompressedSequenceLLen, (i)) = llen;
+            DEREF(srt.inoutDecompressedSequenceMLen, (i)) = mlen;
+            DEREF(srt.inoutDecompressedSequenceOffs, (i)) = offs;
         }
     }
 
     // NOTE(pamartis): update block size adding `totalMLen` bytes on top
-    srt.inoutBlockSizePrefix[seqRef.blockId] = totalMLen + literalSize;
+    DEREF(srt.inoutBlockSizePrefix, (seqRef.blockId)) = totalMLen + literalSize;
 
-    srt.inoutPerSeqStreamFinalOffset1[seqStreamIdx] = offset1;
-    srt.inoutPerSeqStreamFinalOffset2[seqStreamIdx] = offset2;
-    srt.inoutPerSeqStreamFinalOffset3[seqStreamIdx] = offset3;
+    DEREF(srt.inoutPerSeqStreamFinalOffset1, (seqStreamIdx)) = offset1;
+    DEREF(srt.inoutPerSeqStreamFinalOffset2, (seqStreamIdx)) = offset2;
+    DEREF(srt.inoutPerSeqStreamFinalOffset3, (seqStreamIdx)) = offset3;
 
     #undef ZSTDGPU_BACKWARD_BITBUF
     //ZSTDGPU_ASSERT(bitBuffer.hadlastrefill && bitBuffer.bitcnt == 0);
@@ -3268,7 +3268,7 @@ static void zstdgpu_ShaderEntry_DecompressSequences_SingleStream(ZSTDGPU_PARAM_I
     const zstdgpu_SeqStreamInfo seqRef = zstdgpu_LoadSeqStreamInfo(srt, seqStreamIdx);
 
      // NOTE: the final block size will be computed as SUM(literalSize, totalMLen)
-    const uint32_t literalSize = srt.inoutBlockSizePrefix[seqRef.blockId];
+    const uint32_t literalSize = DEREF(srt.inoutBlockSizePrefix, (seqRef.blockId));
     // uint32_t totalSize = 0;
     uint32_t totalMLen = 0;
 
@@ -3374,9 +3374,9 @@ static void zstdgpu_ShaderEntry_DecompressSequences_SingleStream(ZSTDGPU_PARAM_I
             packedFseElemMLen = ZSTDGPU_SS_FSE_MLEN(stateMLen);
         }
 
-        srt.inoutDecompressedSequenceLLen[i] = llen;
-        srt.inoutDecompressedSequenceMLen[i] = mlen;
-        srt.inoutDecompressedSequenceOffs[i] = offs;
+        DEREF(srt.inoutDecompressedSequenceLLen, (i)) = llen;
+        DEREF(srt.inoutDecompressedSequenceMLen, (i)) = mlen;
+        DEREF(srt.inoutDecompressedSequenceOffs, (i)) = offs;
 
         if (isLastSeq)
         {
@@ -3391,10 +3391,10 @@ static void zstdgpu_ShaderEntry_DecompressSequences_SingleStream(ZSTDGPU_PARAM_I
     #undef ZSTDGPU_BACKWARD_BITBUF
 
     // NOTE(pamartis): update block size adding `totalMLen` bytes on top
-    srt.inoutBlockSizePrefix[seqRef.blockId] = totalMLen + literalSize;
-    srt.inoutPerSeqStreamFinalOffset1[seqStreamIdx] = offset1;
-    srt.inoutPerSeqStreamFinalOffset2[seqStreamIdx] = offset2;
-    srt.inoutPerSeqStreamFinalOffset3[seqStreamIdx] = offset3;
+    DEREF(srt.inoutBlockSizePrefix, (seqRef.blockId)) = totalMLen + literalSize;
+    DEREF(srt.inoutPerSeqStreamFinalOffset1, (seqStreamIdx)) = offset1;
+    DEREF(srt.inoutPerSeqStreamFinalOffset2, (seqStreamIdx)) = offset2;
+    DEREF(srt.inoutPerSeqStreamFinalOffset3, (seqStreamIdx)) = offset3;
 }
 
 #ifdef kzstdgpu_DecompressSequences_SingleStream_NoLdsFseCache_UNDEF
@@ -3487,7 +3487,7 @@ static void zstdgpu_ShaderEntry_DecompressSequences_MultiStream_LdsOutCache(ZSTD
     ZSTDGPU_BACKWARD_BITBUF(InitWithSegment)(bitBuffer, srt.inCompressedData, seqRef.src);
 
     // NOTE: the final block size will be computed as SUM(literalSize, totalMLen)
-    const uint32_t literalSize = srt.inoutBlockSizePrefix[seqRef.blockId];
+    const uint32_t literalSize = DEREF(srt.inoutBlockSizePrefix, (seqRef.blockId));
     uint32_t totalMLen = 0;
 
     const uint32_t startLLen = zstdgpu_ComputeFseDataStartFromFseIndexLLen(seqRef.fseLLen, cmpBlockCnt);
@@ -3573,9 +3573,9 @@ static void zstdgpu_ShaderEntry_DecompressSequences_MultiStream_LdsOutCache(ZSTD
                     const uint32_t mlen = zstdgpu_LdsLoadU32(GS_MLenCache + srcOffset);
                     const uint32_t offs = zstdgpu_LdsLoadU32(GS_OffsCache + srcOffset);
 
-                    srt.inoutDecompressedSequenceLLen[dstSeqIdx + seqIdxToStore] = llen;
-                    srt.inoutDecompressedSequenceMLen[dstSeqIdx + seqIdxToStore] = mlen;
-                    srt.inoutDecompressedSequenceOffs[dstSeqIdx + seqIdxToStore] = offs;
+                    DEREF(srt.inoutDecompressedSequenceLLen, (dstSeqIdx + seqIdxToStore)) = llen;
+                    DEREF(srt.inoutDecompressedSequenceMLen, (dstSeqIdx + seqIdxToStore)) = mlen;
+                    DEREF(srt.inoutDecompressedSequenceOffs, (dstSeqIdx + seqIdxToStore)) = offs;
                 }
             }
         }
@@ -3585,11 +3585,11 @@ static void zstdgpu_ShaderEntry_DecompressSequences_MultiStream_LdsOutCache(ZSTD
     if (seqStreamActive)
     {
         // NOTE(pamartis): update block size adding `totalMLen` bytes on top
-        srt.inoutBlockSizePrefix[seqRef.blockId] = totalMLen + literalSize;
+        DEREF(srt.inoutBlockSizePrefix, (seqRef.blockId)) = totalMLen + literalSize;
 
-        srt.inoutPerSeqStreamFinalOffset1[seqStreamIdx] = offset1;
-        srt.inoutPerSeqStreamFinalOffset2[seqStreamIdx] = offset2;
-        srt.inoutPerSeqStreamFinalOffset3[seqStreamIdx] = offset3;
+        DEREF(srt.inoutPerSeqStreamFinalOffset1, (seqStreamIdx)) = offset1;
+        DEREF(srt.inoutPerSeqStreamFinalOffset2, (seqStreamIdx)) = offset2;
+        DEREF(srt.inoutPerSeqStreamFinalOffset3, (seqStreamIdx)) = offset3;
     }
 
     #undef ZSTDGPU_BACKWARD_BITBUF
@@ -3620,7 +3620,7 @@ static void zstdgpu_ShaderEntry_FinaliseSequenceOffsets(ZSTDGPU_PARAM_INOUT(zstd
     if (seqIdx >= seqCnt)
         return;
 
-    uint32_t offset = srt.inoutDecompressedSequenceOffs[seqIdx];
+    uint32_t offset = DEREF(srt.inoutDecompressedSequenceOffs, (seqIdx));
 
     // NOTE(pamartis): during "Sequence Decoding" we encode offsets so that they are either:
     //      - actual relative offsets (offset "N" means "-N" bytes relative to the current position in the output stream) with extra "+3" encoding.
@@ -3649,7 +3649,7 @@ static void zstdgpu_ShaderEntry_FinaliseSequenceOffsets(ZSTDGPU_PARAM_INOUT(zstd
         offset = zstdgpu_DecodeSeqRepeatOffsetAndApplyPreviousOffsets(offset, offset1, offset2, offset3);
     }
     offset -= 3u;
-    srt.inoutDecompressedSequenceOffs[seqIdx] = offset;
+    DEREF(srt.inoutDecompressedSequenceOffs, (seqIdx)) = offset;
 }
 
 struct zstdgpu_Sequence
@@ -3725,7 +3725,7 @@ static void zstdgpu_MatchCopy(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dstData
 
         ZSTDGPU_LOOP for (; dstI < dstEnd; dstI += laneCount)
         {
-            zstdgpu_TypedStoreU8(dstData, dstI, dstData[dstI - seq.offs]);
+            zstdgpu_TypedStoreU8(dstData, dstI, DEREF(dstData, (dstI - seq.offs)));
         }
     }
     else // 'seq.offs < seq.mlen && seq.offs < laneCount':
@@ -3733,7 +3733,7 @@ static void zstdgpu_MatchCopy(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dstData
         uint32_t srcSym = 0;
         ZSTDGPU_BRANCH if (laneId < seq.offs)
         {
-            srcSym = dstData[dstOfs + laneId - seq.offs];
+            srcSym = DEREF(dstData, (dstOfs + laneId - seq.offs));
         }
 
         const uint32_t copyLen = zstdgpu_MinU32(dstEnd - dstOfs, seq.mlen); //< NOTE(pamartis): could skip min
@@ -3784,7 +3784,7 @@ static void zstdgpu_ExecuteSequence_FusedCopy(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, 
             // Load both literal and match values unconditionally, then select based on laneId to keep control flow wave-uniform.
             // Hot path is bound by dependent-store latency rather than loads.
             const uint32_t litVal   = litBuf[litOfs + laneId];
-            const uint32_t matchVal = dstData[dstOfs + laneId - seq.offs];
+            const uint32_t matchVal = DEREF(dstData, (dstOfs + laneId - seq.offs));
             const uint32_t value    = (laneId < seq.llen) ? litVal : matchVal;
             zstdgpu_TypedStoreU8(dstData, dstOfs + laneId, value);
         }
@@ -3829,7 +3829,7 @@ static void zstdgpu_ExecuteSequencePair_FusedCopy(ZSTDGPU_RW_TYPED_BUFFER(uint32
             const uint32_t litIdx   = inSeq0 ? (litOfs + laneId) : (litOfs + seq0.llen + local);
             const uint32_t off      = inSeq0 ? seq0.offs : seq1.offs;
             const uint32_t litVal   = litBuf[litIdx];
-            const uint32_t matchVal = dstData[dstOfs + laneId - off];
+            const uint32_t matchVal = DEREF(dstData, (dstOfs + laneId - off));
             const uint32_t value    = (local < llenL) ? litVal : matchVal;
             zstdgpu_TypedStoreU8(dstData, dstOfs + laneId, value);
         }
@@ -3850,7 +3850,7 @@ static void zstdgpu_ExecuteSequencePair_FusedCopy(ZSTDGPU_RW_TYPED_BUFFER(uint32
             const uint32_t litIdx = inSeq0 ? (litOfs + b) : (litOfs + seq0.llen + local);
             const uint32_t off    = inSeq0 ? seq0.offs : seq1.offs;
             const uint32_t litVal   = litBuf[litIdx];
-            const uint32_t matchVal = dstData[dstOfs + b - off];
+            const uint32_t matchVal = DEREF(dstData, (dstOfs + b - off));
             const uint32_t value    = (local < llenL) ? litVal : matchVal;
             zstdgpu_TypedStoreU8(dstData, dstOfs + b, value);
         }
@@ -3972,7 +3972,7 @@ static void zstdgpu_ShaderEntry_ExecuteSequences(ZSTDGPU_PARAM_INOUT(zstdgpu_Exe
 #if 0
         for (uint32_t blockByteIdx = blockByteBeg + i; blockByteIdx < blockByteEnd; blockByteIdx += maxCopySize)
         {
-            srt.inoutUnCompressedFramesData[blockByteIdx] = cmpBlockIdx & 255;
+            DEREF(srt.inoutUnCompressedFramesData, (blockByteIdx)) = cmpBlockIdx & 255;
         }
 
 #else
