@@ -189,11 +189,13 @@
 #endif
 
 
+#ifndef ZSTDGPU_PARAM_OUT
 #   ifdef __hlsl_dx_compiler
 #       define ZSTDGPU_PARAM_OUT(type) out type
 #   else
 #       define ZSTDGPU_PARAM_OUT(type) type &
 #   endif
+#endif
 
 // Opaque LDS address types: offset on HLSL, pointer on C++.
 // Using these instead of raw uint32_t / uint32_t* prevents accidental type
@@ -237,6 +239,15 @@
 #      define ZSTDGPU_LOOP
 #   endif
 #endif
+
+// AMC, executeIndirectWorkaround:
+#define ZSTDGPU_RESOLVE_workItemCount(srt)                                      \
+    ZSTDGPU_BRANCH if (int32_t(srt.workItemCount) < 0)                          \
+    {                                                                           \
+        const uint32_t slot = ~srt.workItemCount;                               \
+        const uint32_t baseIdx = slot * kzstdgpu_DispatchSlot_StrideInUInt32;   \
+        srt.workItemCount = ZstdInDispatchArgs[baseIdx + 1];                    \
+    }
 
 static const uint32_t kzstdgpu_MaxCount_ThreadGroupsPerDimensionLog2 = 15;
 

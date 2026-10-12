@@ -1156,13 +1156,7 @@ static void emitSrtHeader(const char *dir, int srtIdx)
         if (kConstIndirect == srt->consts[i].kind)
         {
             /** indirect const found, emit code for executeIndirectWorkaround */
-            sb_StrLitEoL(b, "    // fixup code for executeIndirectWorkaround");
-            sb_StrLitEoL(b, "    ZSTDGPU_BRANCH if (int32_t(srt.workItemCount) < 0)"); /** for practical cases, only an encoded slot has the sign bit set */
-            sb_StrLitEoL(b, "    {");
-            sb_StrLitEoL(b, "        const uint32_t slot = ~srt.workItemCount;"); /** decode slot */
-            sb_StrLitEoL(b, "        const uint32_t baseIdx = slot * kzstdgpu_DispatchSlot_StrideInUInt32;");
-            sb_StrLitEoL(b, "        srt.workItemCount = ZstdInDispatchArgs[baseIdx + 1];"); /** skip tgOffset to load the actual workItemCount */
-            sb_StrLitEoL(b, "    }");
+            sb_StrLitEoL(b, "    ZSTDGPU_RESOLVE_workItemCount(srt); // fixup code for executeIndirectWorkaround");
             break;
         }
     }

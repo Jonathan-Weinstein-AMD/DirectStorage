@@ -44,13 +44,7 @@ static void zstdgpu_Srt_Fill(ZSTDGPU_PARAM_INOUT(zstdgpu_ComputeDestBlockOffsets
     srt.tgOffset                    = ZstdConstants_ComputeDestBlockOffsets.tgOffset;
     srt.workItemCount               = ZstdConstants_ComputeDestBlockOffsets.workItemCount;
     srt.frameCount                  = ZstdConstants_ComputeDestBlockOffsets.frameCount;
-    // fixup code for executeIndirectWorkaround
-    ZSTDGPU_BRANCH if (int32_t(srt.workItemCount) < 0)
-    {
-        const uint32_t slot = ~srt.workItemCount;
-        const uint32_t baseIdx = slot * kzstdgpu_DispatchSlot_StrideInUInt32;
-        srt.workItemCount = ZstdInDispatchArgs[baseIdx + 1];
-    }
+    ZSTDGPU_RESOLVE_workItemCount(srt); // fixup code for executeIndirectWorkaround
 }
 
 #else
