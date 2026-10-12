@@ -17,7 +17,7 @@
 
 typedef struct zstdgpu_ParseFrames_SRT
 {
-    ZSTDGPU_RO_BUFFER(uint32_t)                             inCompressedData;
+    ZSTDGPU_RO_RAW_BUFFER(uint32_t)                         inCompressedData;
     ZSTDGPU_RO_BUFFER(zstdgpu_OffsetAndSize)                inFramesRefs;
     ZSTDGPU_RW_BUFFER(zstdgpu_Counters)                     inoutCounters;
     ZSTDGPU_RW_BUFFER(uint32_t)                             inoutPerFrameBlockCountRAW;
@@ -152,7 +152,7 @@ typedef struct zstdgpu_DecodeHuffmanWeights_SRT
     ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t)              inoutDecompressedHuffmanWeights;
     ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t)              inoutDecompressedHuffmanWeightCount;
     ZSTDGPU_RO_BUFFER(zstdgpu_Counters)                     inCounters;
-    ZSTDGPU_RO_BUFFER(uint32_t)                             inCompressedData;
+    ZSTDGPU_RO_RAW_BUFFER(uint32_t)                         inCompressedData;
     ZSTDGPU_RO_BUFFER(zstdgpu_OffsetAndSize)                inHufRefs;
     ZSTDGPU_RO_BUFFER(uint32_t)                             inDispatchArgs;
     uint32_t                                                tgOffset;
@@ -245,7 +245,7 @@ typedef struct zstdgpu_MemsetMemcpy_SRT
 {
     ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t)              inoutUnCompressedFramesData;
     ZSTDGPU_RO_BUFFER(zstdgpu_Counters)                     inCounters;
-    ZSTDGPU_RO_BUFFER(uint32_t)                             inCompressedData;
+    ZSTDGPU_RO_RAW_BUFFER(uint32_t)                         inCompressedData;
     ZSTDGPU_RO_BUFFER(uint32_t)                             inBlockDestOffs;
     ZSTDGPU_RO_BUFFER(uint32_t)                             inBlockSizePrefixTyped;
     ZSTDGPU_RO_BUFFER(zstdgpu_OffsetAndSize)                inBlocksRefsTyped;
@@ -289,7 +289,7 @@ typedef struct zstdgpu_ParseCompressedBlocks_SRT
     ZSTDGPU_RW_BUFFER(uint32_t)                             inoutHufLitIdToLitStreamId;
     ZSTDGPU_RW_BUFFER(uint32_t)                             inoutHufLitIdToHufWId_DBG;
     ZSTDGPU_RW_BUFFER_GLC(uint32_t)                         inoutHufLitCompactionLookback;
-    ZSTDGPU_RO_BUFFER(uint32_t)                             inCompressedData;
+    ZSTDGPU_RO_RAW_BUFFER(uint32_t)                         inCompressedData;
     ZSTDGPU_RO_BUFFER(zstdgpu_OffsetAndSize)                inBlocksCMPRefs;
     ZSTDGPU_RO_BUFFER(uint32_t)                             inPerFrameBlockCountCMP;
     ZSTDGPU_RO_BUFFER(uint32_t)                             inGlobalBlockIndexPerCmpBlock;

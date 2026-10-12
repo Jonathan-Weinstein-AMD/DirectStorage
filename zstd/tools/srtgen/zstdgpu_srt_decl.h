@@ -49,7 +49,7 @@
 #define ZSTDGPU_SRT_DECL_H
 
 ZSTDGPU_SRT_BIND_GROUP_BEGIN(ParseFrames, Stage0|Stage1)
-    ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , CompressedData                )
+    ZSTDGPU_SRT_BUF_RO_BYTE(CompressedData)
     ZSTDGPU_SRT_BUF_RO_STRUCT(zstdgpu_OffsetAndSize         , FramesRefs                    )
 
     ZSTDGPU_SRT_BUF_RW_STRUCT(zstdgpu_Counters              , Counters                      )
@@ -257,7 +257,7 @@ ZSTDGPU_SRT_BEGIN(DecodeHuffmanWeights, Indirect)
     ZSTDGPU_SRT_USE_BIND_GROUP(HuffmanWeightsWrite)
 
     ZSTDGPU_SRT_BUF_RO_STRUCT(zstdgpu_Counters              , Counters                      )
-    ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , CompressedData                )
+    ZSTDGPU_SRT_BUF_RO_BYTE(CompressedData)
     ZSTDGPU_SRT_BUF_RO_STRUCT(zstdgpu_OffsetAndSize         , HufRefs                       )
 
     ZSTDGPU_SRT_CONST_INDIRECT(uint32_t                     , tgOffset                      )
@@ -345,7 +345,7 @@ ZSTDGPU_SRT_BEGIN(MemsetMemcpy, Indirect)
     ZSTDGPU_SRT_USE_BIND_GROUP(FrameOutput)
 
     ZSTDGPU_SRT_BUF_RO_STRUCT(zstdgpu_Counters              , Counters                      )
-    ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , CompressedData                )
+    ZSTDGPU_SRT_BUF_RO_BYTE(CompressedData)
     ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , BlockDestOffs                 )
     ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , BlockSizePrefixTyped          )
     ZSTDGPU_SRT_BUF_RO_STRUCT(zstdgpu_OffsetAndSize         , BlocksRefsTyped               )
@@ -367,7 +367,7 @@ ZSTDGPU_SRT_END()
 ZSTDGPU_SRT_BEGIN(ParseCompressedBlocks, Indirect)
     ZSTDGPU_SRT_USE_BIND_GROUP(ParseBlocksWrite)
 
-    ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , CompressedData                )
+    ZSTDGPU_SRT_BUF_RO_BYTE(CompressedData)
     ZSTDGPU_SRT_BUF_RO_STRUCT(zstdgpu_OffsetAndSize         , BlocksCMPRefs                 )
     ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , PerFrameBlockCountCMP         )
     ZSTDGPU_SRT_BUF_RO_STRUCT(uint32_t                      , GlobalBlockIndexPerCmpBlock   )

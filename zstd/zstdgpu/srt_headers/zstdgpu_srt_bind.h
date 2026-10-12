@@ -292,7 +292,7 @@ static D3D12_GPU_DESCRIPTOR_HANDLE zstdgpu_Srt_InitBindGroup_ParseFrames(zstdgpu
     const D3D12_GPU_DESCRIPTOR_HANDLE gpuDest  = { gpuStart.ptr + (UINT64)srts.heapOffset * descSize };
     D3D12_CPU_DESCRIPTOR_HANDLE       cpuDest  = { cpuStart.ptr + (SIZE_T)srts.heapOffset * descSize };
 
-    zstdgpu_Srt_PushStructBufferSrv(cpuDest, descSize, device, b.CompressedData, resInfo.CompressedData_ByteSize, sizeof(uint32_t));
+    zstdgpu_Srt_PushRawBufferSrv(cpuDest, descSize, device, b.CompressedData, resInfo.CompressedData_ByteSize);
     zstdgpu_Srt_PushStructBufferSrv(cpuDest, descSize, device, b.FramesRefs, resInfo.FramesRefs_ByteSize, sizeof(zstdgpu_OffsetAndSize));
     zstdgpu_Srt_PushStructBufferUav(cpuDest, descSize, device, b.Counters, resInfo.Counters_ByteSize, sizeof(zstdgpu_Counters));
     zstdgpu_Srt_PushStructBufferUav(cpuDest, descSize, device, b.PerFrameBlockCountRAW, resInfo.PerFrameBlockCountRAW_ByteSize, sizeof(uint32_t));

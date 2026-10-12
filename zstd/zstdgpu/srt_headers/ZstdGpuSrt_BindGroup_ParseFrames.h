@@ -19,7 +19,7 @@
 
 #define ZSTDGPU_SRT_RS_BIND_GROUP_ParseFrames "DescriptorTable(SRV(t0, space=1, numDescriptors=2), UAV(u0, space=1, numDescriptors=16))"
 
-ZSTDGPU_RO_BUFFER(uint32_t)                 ZstdInCompressedData                    : register(t0, space1);
+ZSTDGPU_RO_RAW_BUFFER(uint32_t)             ZstdInCompressedData                    : register(t0, space1);
 ZSTDGPU_RO_BUFFER(zstdgpu_OffsetAndSize)    ZstdInFramesRefs                        : register(t1, space1);
 ZSTDGPU_RW_BUFFER(zstdgpu_Counters)         ZstdInOutCounters                       : register(u0, space1);
 ZSTDGPU_RW_BUFFER(uint32_t)                 ZstdInOutPerFrameBlockCountRAW          : register(u1, space1);

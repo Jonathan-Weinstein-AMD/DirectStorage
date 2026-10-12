@@ -20,7 +20,7 @@
 #ifdef __hlsl_dx_compiler
 
 ZSTDGPU_RO_BUFFER(zstdgpu_Counters)         ZstdInCounters          : register(t0);
-ZSTDGPU_RO_BUFFER(uint32_t)                 ZstdInCompressedData    : register(t1);
+ZSTDGPU_RO_RAW_BUFFER(uint32_t)             ZstdInCompressedData    : register(t1);
 ZSTDGPU_RO_BUFFER(zstdgpu_OffsetAndSize)    ZstdInHufRefs           : register(t2);
 ZSTDGPU_RO_BUFFER(uint32_t)                 ZstdInDispatchArgs      : register(t3);
 

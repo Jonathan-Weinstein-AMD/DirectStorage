@@ -20,7 +20,7 @@
 #ifdef __hlsl_dx_compiler
 
 ZSTDGPU_RO_BUFFER(zstdgpu_Counters)         ZstdInCounters              : register(t0);
-ZSTDGPU_RO_BUFFER(uint32_t)                 ZstdInCompressedData        : register(t1);
+ZSTDGPU_RO_RAW_BUFFER(uint32_t)             ZstdInCompressedData        : register(t1);
 ZSTDGPU_RO_BUFFER(uint32_t)                 ZstdInBlockDestOffs         : register(t2);
 ZSTDGPU_RO_BUFFER(uint32_t)                 ZstdInBlockSizePrefixTyped  : register(t3);
 ZSTDGPU_RO_BUFFER(zstdgpu_OffsetAndSize)    ZstdInBlocksRefsTyped       : register(t4);
@@ -65,7 +65,7 @@ static void zstdgpu_Srt_Fill(ZSTDGPU_PARAM_INOUT(zstdgpu_MemsetMemcpy_SRT) srt)
 
 static void zstdgpu_Srt_Fill(zstdgpu_MemsetMemcpy_SRT &srt, const zstdgpu_ResourceDataCpu &cpuRes,
                              ZSTDGPU_RO_BUFFER(zstdgpu_Counters)          inCounters,
-                             ZSTDGPU_RO_BUFFER(uint32_t)                  inCompressedData,
+                             ZSTDGPU_RO_RAW_BUFFER(uint32_t)              inCompressedData,
                              ZSTDGPU_RO_BUFFER(uint32_t)                  inBlockDestOffs,
                              ZSTDGPU_RO_BUFFER(uint32_t)                  inBlockSizePrefixTyped,
                              ZSTDGPU_RO_BUFFER(zstdgpu_OffsetAndSize)     inBlocksRefsTyped,

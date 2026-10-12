@@ -49,7 +49,7 @@ void main(uint2 groupId : SV_GroupId, uint i : SV_GroupThreadId)
     {
         const uint32_t byteOfs = blockRef.offs + byteIdx;
 
-        ZstdInOutUnCompressedFramesData[dstBlockOffset + byteIdx] = (ZstdInCompressedData[byteOfs >> 2u] >> ((byteOfs & 3u) << 3u)) & 0xffu;
+        ZstdInOutUnCompressedFramesData[dstBlockOffset + byteIdx] = (zstdgpu_ByteOffsetLoadU32(ZstdInCompressedData, byteOfs & -4) >> ((byteOfs & 3u) << 3u)) & 0xffu;
     }
     else
     {

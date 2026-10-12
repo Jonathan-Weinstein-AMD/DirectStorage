@@ -925,22 +925,22 @@ static inline void zstdgpu_Init_OffsetAndSize(ZSTDGPU_PARAM_INOUT(zstdgpu_Offset
 
 typedef struct zstdgpu_Forward_BitBuffer
 {
-    ZSTDGPU_RO_BUFFER(uint32_t) buffer;
+    ZSTDGPU_RO_RAW_BUFFER(uint32_t) buffer;
 
     uint64_t bitbuf;    // VGPRs storing valid bits that are not consumed yet
-    uint32_t offset;    // VGPR storing the offset in dwords to the start of the next dword fetch
+    uint32_t offset_bytes; // VGPR storing the offset in _bytes_ to the start of the next dword fetch // AMC
     uint32_t bitcnt;    // VGPR storing the number of valid bits in `bitbuf`
     uint32_t datasz;    // VGPR as it store any memory block size varying per lane
     uint32_t bytesz;    // must be SGPR and must store the entire compressed buffer
 } zstdgpu_Forward_BitBuffer;
 
-static inline void zstdgpu_Forward_BitBuffer_Init(ZSTDGPU_PARAM_INOUT(zstdgpu_Forward_BitBuffer) outBuffer, ZSTDGPU_RO_BUFFER(uint32_t) buffer, uint32_t datasz, uint32_t bytesz)
+static inline void zstdgpu_Forward_BitBuffer_Init(ZSTDGPU_PARAM_INOUT(zstdgpu_Forward_BitBuffer) outBuffer, ZSTDGPU_RO_RAW_BUFFER(uint32_t) buffer, uint32_t datasz, uint32_t bytesz)
 {
     ZSTDGPU_ASSERT(0 == (bytesz & 3));
 
     outBuffer.buffer = buffer;
     outBuffer.bitbuf = 0;
-    outBuffer.offset = 0;
+    outBuffer.offset_bytes = 0;
     outBuffer.bitcnt = 0;
     outBuffer.datasz = datasz;
     outBuffer.bytesz = bytesz;
@@ -952,9 +952,9 @@ static inline void zstdgpu_Forward_BitBuffer_Refill(ZSTDGPU_PARAM_INOUT(zstdgpu_
 
     if (inoutBuffer.bitcnt < bitcnt)
     {
-        ZSTDGPU_ASSERT_MSG(inoutBuffer.offset < (inoutBuffer.bytesz >> 2), "Refill: fetch dword %u from %u-byte (%u-dwords) buffer", inoutBuffer.offset, inoutBuffer.bytesz, inoutBuffer.bytesz >> 2);
+        ZSTDGPU_ASSERT_MSG(inoutBuffer.offset_bytes < inoutBuffer.bytesz, "Refill: fetch dword at byte offst %u from %u-byte (%u-dwords) buffer", inoutBuffer.offset_bytes, inoutBuffer.bytesz, inoutBuffer.bytesz >> 2);
 
-        inoutBuffer.bitbuf |= (uint64_t)inoutBuffer.buffer[inoutBuffer.offset] << inoutBuffer.bitcnt;
+        inoutBuffer.bitbuf |= (uint64_t)zstdgpu_ByteOffsetLoadU32(inoutBuffer.buffer, inoutBuffer.offset_bytes) << inoutBuffer.bitcnt;
 #if 0
         // TODO:    We currently rely on the fact that bits outside the bounds ("invalid") are never used.
         //          so they are present in "bitbuf" because we fetch the last dword and treat all bits as they are "valid"
@@ -967,7 +967,7 @@ static inline void zstdgpu_Forward_BitBuffer_Refill(ZSTDGPU_PARAM_INOUT(zstdgpu_
 #endif
 
         inoutBuffer.bitcnt += 32;
-        inoutBuffer.offset += 1;
+        inoutBuffer.offset_bytes += 4;
     }
 }
 
@@ -992,7 +992,7 @@ ZSTDGPU_BITBUF_DEFINE_STANDARD_METHODS(Forward_BitBuffer)
 static inline uint32_t zstdgpu_Forward_BitBuffer_GetByteOffset(ZSTDGPU_PARAM_IN(zstdgpu_Forward_BitBuffer) inBuffer)
 {
     ZSTDGPU_ASSERT(0 == (inBuffer.bitcnt & 7));
-    return (inBuffer.offset << 2) - (inBuffer.bitcnt >> 3);
+    return inBuffer.offset_bytes - (inBuffer.bitcnt >> 3);
 }
 
 static inline void zstdgpu_Forward_BitBuffer_Skip(ZSTDGPU_PARAM_INOUT(zstdgpu_Forward_BitBuffer) inoutBuffer, uint32_t bytecnt)
@@ -1008,17 +1008,17 @@ static inline void zstdgpu_Forward_BitBuffer_Skip(ZSTDGPU_PARAM_INOUT(zstdgpu_Fo
     {
         bytecnt -= skipcnt;
 
-        inoutBuffer.offset += bytecnt >> 2;
+        inoutBuffer.offset_bytes += (bytecnt & -4);
         inoutBuffer.bitcnt = 0;
 
         const uint32_t reqbits = (bytecnt & 3u) << 3u;
 
         ZSTDGPU_BRANCH if (reqbits > 0)
         {
-            ZSTDGPU_ASSERT_MSG(inoutBuffer.offset < (inoutBuffer.bytesz >> 2), "Skip: fetch dword %u from %u-byte (%u-dwords) buffer", inoutBuffer.offset, inoutBuffer.bytesz, inoutBuffer.bytesz >> 2);
+            ZSTDGPU_ASSERT_MSG(inoutBuffer.offset_bytes < inoutBuffer.bytesz, "Refill: fetch dword at byte offst %u from %u-byte (%u-dwords) buffer", inoutBuffer.offset_bytes, inoutBuffer.bytesz, inoutBuffer.bytesz >> 2);
 
-            inoutBuffer.bitbuf = (uint64_t)inoutBuffer.buffer[inoutBuffer.offset] >> reqbits;
-            inoutBuffer.offset += 1;
+            inoutBuffer.bitbuf = (uint64_t)zstdgpu_ByteOffsetLoadU32(inoutBuffer.buffer, inoutBuffer.offset_bytes) >> reqbits;
+            inoutBuffer.offset_bytes += 4;
             inoutBuffer.bitcnt = 32 - reqbits;
         }
     }
@@ -1036,7 +1036,7 @@ static inline void zstdgpu_Forward_BitBuffer_Skip(ZSTDGPU_PARAM_INOUT(zstdgpu_Fo
 #endif
 }
 
-static inline void zstdgpu_Forward_BitBuffer_InitWithSegment(ZSTDGPU_PARAM_OUT(zstdgpu_Forward_BitBuffer) outBuffer, ZSTDGPU_RO_BUFFER(uint32_t) buffer, ZSTDGPU_PARAM_IN(zstdgpu_OffsetAndSize) segment, uint32_t bytesz)
+static inline void zstdgpu_Forward_BitBuffer_InitWithSegment(ZSTDGPU_PARAM_OUT(zstdgpu_Forward_BitBuffer) outBuffer, ZSTDGPU_RO_RAW_BUFFER(uint32_t) buffer, ZSTDGPU_PARAM_IN(zstdgpu_OffsetAndSize) segment, uint32_t bytesz)
 {
     // init as normal buffer but set `dstdatasz == offset + srcdatasz` because we're going to skip `offset` bytes
     zstdgpu_Forward_BitBuffer_Init(outBuffer, buffer, segment.offs + segment.size, bytesz);
