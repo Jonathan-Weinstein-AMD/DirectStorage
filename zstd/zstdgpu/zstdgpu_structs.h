@@ -249,6 +249,9 @@
         srt.workItemCount = ZstdInDispatchArgs[baseIdx + 1];                    \
     }
 
+// AMC: revert commit that applied DEREF _before_ merging development branch into this branch, then re-apply DEREF.
+#define DEREF(uav, coord) uav[(coord)]
+
 static const uint32_t kzstdgpu_MaxCount_ThreadGroupsPerDimensionLog2 = 15;
 
 static const uint32_t kzstdgpu_MaxCount_BlockSizeBits   = 17u;
