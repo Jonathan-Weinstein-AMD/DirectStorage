@@ -24,6 +24,7 @@ typedef struct zstdgpu_ParseFrames_SRT
     ZSTDGPU_RW_BUFFER(uint32_t)                             inoutPerFrameBlockCountRLE;
     ZSTDGPU_RW_BUFFER(uint32_t)                             inoutPerFrameBlockCountCMP;
     ZSTDGPU_RW_BUFFER(uint32_t)                             inoutPerFrameBlockCountAll;
+    ZSTDGPU_RW_BUFFER(uint32_t)                             inoutPerFrameSeqStreamMinIdx;
     ZSTDGPU_RW_BUFFER(uint32_t)                             inoutRawBlockSizePrefix;
     ZSTDGPU_RW_BUFFER(uint32_t)                             inoutRleBlockSizePrefix;
     ZSTDGPU_RW_BUFFER(zstdgpu_OffsetAndSize)                inoutBlocksRAWRefs;

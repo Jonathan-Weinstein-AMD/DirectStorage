@@ -42,6 +42,7 @@
  * AMC:
  *  - Change FseProbs from typed buffer to structured buffer. Mostly enables SMEM for SRV loads if those may occur.
  *  - Remove ZSTDGPU_SRT_CONST_INLINE usage.
+ *  - Move 0xFFFFFFFF memset of PerFrameSeqStreamMinIdx to ParseFrames so nonzero memsets are only needed for zsts with Huffman literals.
  */
 
 #ifndef ZSTDGPU_SRT_DECL_H
@@ -56,6 +57,7 @@ ZSTDGPU_SRT_BIND_GROUP_BEGIN(ParseFrames, Stage0|Stage1)
     ZSTDGPU_SRT_BUF_RW_STRUCT(uint32_t                      , PerFrameBlockCountRLE         )
     ZSTDGPU_SRT_BUF_RW_STRUCT(uint32_t                      , PerFrameBlockCountCMP         )
     ZSTDGPU_SRT_BUF_RW_STRUCT(uint32_t                      , PerFrameBlockCountAll         )
+    ZSTDGPU_SRT_BUF_RW_STRUCT(uint32_t                      , PerFrameSeqStreamMinIdx       )
     ZSTDGPU_SRT_BUF_RW_STRUCT(uint32_t                      , RawBlockSizePrefix            )
     ZSTDGPU_SRT_BUF_RW_STRUCT(uint32_t                      , RleBlockSizePrefix            )
 
@@ -375,10 +377,6 @@ ZSTDGPU_SRT_BEGIN(ParseCompressedBlocks, Indirect)
     ZSTDGPU_SRT_CONST(uint32_t                              , compressedBufferSizeInBytes   )
     ZSTDGPU_SRT_CONST(uint32_t                              , frameCount                    )
 ZSTDGPU_SRT_END()
-
-ZSTDGPU_SRT_PASS_BEGIN(Memset, SeqStreamMinIdx, Direct)
-    ZSTDGPU_SRT_BIND(Dest, PerFrameSeqStreamMinIdx)
-ZSTDGPU_SRT_PASS_END()
 
 ZSTDGPU_SRT_PASS_BEGIN(Memset, BlockCountRawLookback, Direct)
     ZSTDGPU_SRT_BIND(Dest, PerFrameBlockCountRAWLookback)

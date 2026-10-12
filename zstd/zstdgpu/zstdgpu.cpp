@@ -2212,9 +2212,6 @@ void zstdgpu_SubmitStage0(zstdgpu_PerRequestContext req, ID3D12GraphicsCommandLi
 
         PIXBeginEvent(cmdList, PIX_COLOR_DEFAULT, L"[InitResources :: Memset :: Stage 0]");
 
-        zstdgpu_Bind_Memset_SeqStreamMinIdx(cmdList, req->srts, req->resData.gpuOnly, /* tgOffset */0, /* workItemCount */req->zstdFrameCount, /* memset value */~0u);
-        cmdList->Dispatch(ZSTDGPU_TG_COUNT(req->zstdFrameCount, kzstdgpu_TgSizeX_Memset), 1, 1);
-
         zstdgpu_Bind_Memset_BlockCountRawLookback(cmdList, req->srts, req->resData.gpuOnly, /* tgOffset */0, /* workItemCount */lookbackCount, /* memset value */0);
         cmdList->Dispatch(tgCount, 1, 1);
         zstdgpu_Bind_Memset_BlockCountRleLookback(cmdList, req->srts, req->resData.gpuOnly, /* tgOffset */0, /* workItemCount */lookbackCount, /* memset value */0);
@@ -2270,7 +2267,7 @@ void zstdgpu_SubmitStage0(zstdgpu_PerRequestContext req, ID3D12GraphicsCommandLi
     {
         PIXBeginEvent(cmdList, PIX_COLOR_DEFAULT, L"Barrier for [PrefixSum :: Block Counts]");
 
-        D3D12_RESOURCE_BARRIER barriers[9];
+        D3D12_RESOURCE_BARRIER barriers[10];
         uint32_t bc = 0;
         // next written/atomically updated by [Parse Frames :: Count Blocks]
         // next written by [PrefixSum :: Block Counts] to store prefix sum instead of counts
@@ -2282,6 +2279,7 @@ void zstdgpu_SubmitStage0(zstdgpu_PerRequestContext req, ID3D12GraphicsCommandLi
         setResourceUavSync(barriers, bc ++, req->resData.gpuOnly.PerFrameBlockCountCMPLookback);
         setResourceUavSync(barriers, bc ++, req->resData.gpuOnly.PerFrameBlockCountAll);
         setResourceUavSync(barriers, bc ++, req->resData.gpuOnly.PerFrameBlockCountAllLookback);
+        setResourceUavSync(barriers, bc ++, req->resData.gpuOnly.PerFrameSeqStreamMinIdx); // AMC
         // last written by [Parse Frames :: Count Blocks]
         // next read by [Update Dispatch Args :: Stage 0] as RWStructuredBuffer (read-only)
         // NOTE: stays in UNORDERED_ACCESS because UpdateDispatchArgs binds Counters as UAV

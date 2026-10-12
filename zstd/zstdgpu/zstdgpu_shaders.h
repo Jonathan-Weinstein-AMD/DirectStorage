@@ -561,6 +561,8 @@ static inline void zstdgpu_ShaderEntry_ParseFrames(ZSTDGPU_PARAM_INOUT(zstdgpu_P
 
             if (srt.countBlocksOnly > 0)
             {
+                srt.inoutPerFrameSeqStreamMinIdx[threadId] = ~0u; // AMC
+
                 frameInfo.rawBlockStart = 0;
                 frameInfo.rleBlockStart = 0;
                 frameInfo.cmpBlockStart = 0;
@@ -636,6 +638,7 @@ static inline void zstdgpu_ShaderEntry_ParseFrames(ZSTDGPU_PARAM_INOUT(zstdgpu_P
                 srt.inoutPerFrameBlockCountRLE[threadId] = 0;
                 srt.inoutPerFrameBlockCountCMP[threadId] = 0;
                 srt.inoutPerFrameBlockCountAll[threadId] = 0;
+                srt.inoutPerFrameSeqStreamMinIdx[threadId] = ~0u; // AMC
             }
             else
             {
@@ -1373,9 +1376,9 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
     //
     ZSTDGPU_BRANCH if (isHufLit)
     {
-        srt.inoutHufWIdToHufLitId[fseTableIndexHufW]  = hufLitId;
+        srt.inoutHufWIdToHufLitId[fseTableIndexHufW]  = hufLitId; // write index is not cmpBlockIdx
         srt.inoutHufLitIdToLitStreamId[hufLitId]      = outBlockData.litStreamIndex;
-        srt.inoutHufLitIdToHufWId_DBG[hufLitId]       = fseTableIndexHufW;
+        srt.inoutHufLitIdToHufWId_DBG[hufLitId]       = fseTableIndexHufW; // used by reference_store
     }
 
     // `Sequences_Section_Header`
