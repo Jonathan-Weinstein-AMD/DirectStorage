@@ -687,8 +687,6 @@ static void zstdgpu_ShaderEntry_InitResources(ZSTDGPU_PARAM_INOUT(zstdgpu_InitRe
             srt.inoutCounters[0].Seq_Streams                                 = 0;
             srt.inoutCounters[0].HUF_Streams                                 = 0;
             srt.inoutCounters[0].HufLit                                      = 0;
-            srt.inoutCounters[0].RAW_Streams                                 = 0;
-            srt.inoutCounters[0].RLE_Streams                                 = 0;
             srt.inoutCounters[0].Blocks_RAW                                  = 0;
             srt.inoutCounters[0].Blocks_RLE                                  = 0;
             srt.inoutCounters[0].Blocks_CMP                                  = 0;
@@ -1119,14 +1117,6 @@ static void zstdgpu_ShaderEntry_ParseCompressedBlocks(ZSTDGPU_PARAM_INOUT(zstdgp
         {
             outBlockData.literal.offs = zstdgpu_Forward_BitBuffer_Get(buffer, 8);
             outBlockData.literal.size = zstdgpu_EncodeRleLitTypeIntoLitSize(regeneratedSize);
-        }
-
-        const uint32_t rawStreamCountPerWave = WaveActiveCountBits(literalBlockType == 0);
-        const uint32_t rleStreamCountPerWave = WaveActiveCountBits(literalBlockType == 1);
-        if (WaveIsFirstLane())
-        {
-            InterlockedAdd(srt.inoutCounters[0].RAW_Streams, rawStreamCountPerWave);
-            InterlockedAdd(srt.inoutCounters[0].RLE_Streams, rleStreamCountPerWave);
         }
     }
     // ...
