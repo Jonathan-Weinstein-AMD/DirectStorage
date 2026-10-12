@@ -262,7 +262,7 @@
     <Error Condition="!Exists('..\packages\Microsoft.Direct3D.DXC.1.8.2505.32\build\native\Microsoft.Direct3D.DXC.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Microsoft.Direct3D.DXC.1.8.2505.32\build\native\Microsoft.Direct3D.DXC.targets'))" />
   </Target>
   <!-- The CompileShaders target compiles all the shaders to ShaderDirectory -->
-  <Target Name="CompileShaders" BeforeTargets="PrepareForBuild" DependsOnTargets="CollectShaders;MakeShaderDirectory" Inputs="%(Shader.FullPath)" Outputs="$(ShaderDirectory)%(Shader.Filename).h">
+  <Target Name="CompileShaders" BeforeTargets="PrepareForBuild" DependsOnTargets="CollectShaders;MakeShaderDirectory" Inputs="%(Shader.FullPath);@(ShaderDeps)" Outputs="$(ShaderDirectory)%(Shader.Filename).h">
     <Message Importance="High" Text="Compiling %(Shader.FullPath) to %(Shader.Filename)" />
     <Exec Command="&quot;$(MSBuildBinPath)\Tracker.exe&quot; /d &quot;$(MSBuildBinPath)\FileTracker64.dll&quot; /i $(TLogLocation) /r &quot;%(Shader.FullPath)&quot; /c dxc.exe --version" />
     <Exec Command="&quot;$(MSBuildBinPath)\Tracker.exe&quot; /d &quot;$(MSBuildBinPath)\FileTracker64.dll&quot; /i $(TLogLocation) /r &quot;%(Shader.FullPath)&quot; /c dxc.exe %(Shader.FullPath) $(DxcOpts) /I &quot;srt_headers&quot; /T%(Shader.ShaderModel) %(Shader.Opts) /Emain /Fh$(ShaderDirectory)%(Shader.Filename).h /Fd$(ShaderDirectory)%(Shader.Filename).pdb /Vn g_%(Shader.Filename)" />
@@ -273,6 +273,11 @@
         <ShaderModel>cs_6_6</ShaderModel>
         <Opts>-enable-16bit-types</Opts>
       </Shader>
+      <!-- Headers shared by all shaders: any change to these must recompile every shader -->
+      <ShaderDeps Include="$(MSBuildThisFileDirectory)Shaders\*.hlsli" />
+      <ShaderDeps Include="$(MSBuildThisFileDirectory)*.h" />
+      <ShaderDeps Include="$(MSBuildThisFileDirectory)srt_headers\*.h" />
+      <ShaderDeps Include="$(MSBuildThisFileFullPath)" />
     </ItemGroup>
     <Message Text="%(Shader.FullPath)" />
   </Target>
