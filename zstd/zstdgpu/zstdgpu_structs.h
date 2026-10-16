@@ -1068,9 +1068,7 @@ typedef struct zstdgpu_Backward_BitBuffer_V0
 
 #if SCALAR_BITSTREAM
     uint32_t stagingVgpr;
-    uint32_t prefetchVgpr;
     uint32_t nextId;
-    uint32_t _zero; // getting bad vmcnt placement
 #endif
 } zstdgpu_Backward_BitBuffer_V0;
 
@@ -1116,9 +1114,7 @@ static inline void zstdgpu_Backward_BitBuffer_V0_InitWithSegment(ZSTDGPU_PARAM_I
 #if SCALAR_BITSTREAM
     // Signed clamp, we can't handle an input buffer > 2 GiB for other reasons already:
     outBuffer.stagingVgpr = zstdgpu_ByteOffsetLoadU32(buffer, zstdgpu_MaxI32(baseByteOffset, lastByteOffset - WaveGetLaneIndex()*4));
-    outBuffer.prefetchVgpr = zstdgpu_ByteOffsetLoadU32(buffer, zstdgpu_MaxI32(baseByteOffset, lastByteOffset - (WaveGetLaneIndex() + WaveGetLaneCount()) *4));
     outBuffer.nextId = 0; // loaded in" reverse"
-    outBuffer._zero = segment.size >> 31;
     uint32_t bitbuf = WaveReadLaneAt(outBuffer.stagingVgpr, outBuffer.nextId++);
 #else
     uint32_t bitbuf = zstdgpu_ByteOffsetLoadU32(buffer, lastByteOffset);
@@ -1192,8 +1188,7 @@ static inline void zstdgpu_Backward_BitBuffer_V0_Refill(ZSTDGPU_PARAM_INOUT(zstd
 #if SCALAR_BITSTREAM
         if (inoutBuffer.nextId >= WaveGetLaneCount())
         {
-            inoutBuffer.stagingVgpr = inoutBuffer.prefetchVgpr ^ inoutBuffer._zero;
-            inoutBuffer.prefetchVgpr = zstdgpu_ByteOffsetLoadU32(inoutBuffer.buffer, zstdgpu_MaxI32(inoutBuffer.baseByteOffset, nextByteOffset - (WaveGetLaneIndex() + WaveGetLaneCount())*4));
+            inoutBuffer.stagingVgpr = zstdgpu_ByteOffsetLoadU32(inoutBuffer.buffer, zstdgpu_MaxI32(inoutBuffer.baseByteOffset, nextByteOffset - WaveGetLaneIndex()*4));
             inoutBuffer.nextId = 0;
         }
         const uint32_t loadValue = WaveReadLaneAt(inoutBuffer.stagingVgpr, inoutBuffer.nextId++);
