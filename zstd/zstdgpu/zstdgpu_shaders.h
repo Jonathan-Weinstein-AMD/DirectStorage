@@ -3026,13 +3026,13 @@ static zstdgpu_OffsetAndSize zstdgpu_GetSequenceStartAndCount(ZSTDGPU_PARAM_INOU
     return ref;
 }
 
-// "BASE_TABLE" includes both EXTRA_BITS + BASELINES:
-#define SEQ_LLEN_BASE_TABLE_END 36
-#define SEQ_MLEN_BASE_TABLE_END 53
+// "AUX_TABLE" includes both EXTRA_BITS + BASELINES:
+#define SEQ_LLEN_AUX_TABLE_END 36
+#define SEQ_MLEN_AUX_TABLE_END 53
 
 // Extra bits are low 5 bits, rest are baseline.
 // It could be better/simpler to not bitpack (use uint32_t2), but the LLVM-SROA pass in DXC might split that up; a single load is desired.
-static const uint32_t SEQ_LLEN_EXTRA_BITS_AND_BASELINES[SEQ_LLEN_BASE_TABLE_END] =
+static const uint32_t SEQ_LLEN_EXTRA_BITS_AND_BASELINES[SEQ_LLEN_AUX_TABLE_END] =
 {
         0 << 5 |  0,     1 << 5 |  0,     2 << 5 |  0,     3 << 5 |  0,     4 << 5 |  0,     5 << 5 |  0,     6 << 5 |  0,     7 << 5 |  0,
         8 << 5 |  0,     9 << 5 |  0,    10 << 5 |  0,    11 << 5 |  0,    12 << 5 |  0,    13 << 5 |  0,    14 << 5 |  0,    15 << 5 |  0,
@@ -3041,7 +3041,7 @@ static const uint32_t SEQ_LLEN_EXTRA_BITS_AND_BASELINES[SEQ_LLEN_BASE_TABLE_END]
      8192 << 5 | 13, 16384 << 5 | 14, 32768 << 5 | 15, 65536 << 5 | 16
 };
 
-static const uint32_t SEQ_MLEN_EXTRA_BITS_AND_BASELINES[SEQ_MLEN_BASE_TABLE_END] =
+static const uint32_t SEQ_MLEN_EXTRA_BITS_AND_BASELINES[SEQ_MLEN_AUX_TABLE_END] =
 {
         3 << 5 |  0,     4 << 5 |  0,     5 << 5 |  0,     6 << 5 |  0,     7 << 5 |  0,     8 << 5 |  0,     9 << 5 |  0,    10 << 5 |  0,
        11 << 5 |  0,    12 << 5 |  0,    13 << 5 |  0,    14 << 5 |  0,    15 << 5 |  0,    16 << 5 |  0,    17 << 5 |  0,    18 << 5 |  0,
@@ -3052,26 +3052,25 @@ static const uint32_t SEQ_MLEN_EXTRA_BITS_AND_BASELINES[SEQ_MLEN_BASE_TABLE_END]
      4099 << 5 | 12,  8195 << 5 | 13, 16387 << 5 | 14, 32771 << 5 | 15, 65539 << 5 | 16
 };
 
-struct zstdgpu_SeqBaseTableContext
+struct zstdgpu_SeqAuxTableContext
 {
     bool useVgpr;
-#if SEQ_BASE_TABLE_USE_READLANE_UNIFORM_INDEX_WAVE32
-    // .x = low 32 array elements, .y = high 32 array elements
     uint32_t2 llenVgpr;
     uint32_t2 mlenVgpr;
-#endif
 };
 
 // This must be in top-level control-flow and before any early per-thread returns.
-static zstdgpu_SeqBaseTableContext zstdgpu_InitSeqBaseTable()
+static zstdgpu_SeqAuxTableContext zstdgpu_InitSeqAuxTable()
 {
-    zstdgpu_SeqBaseTableContext ctx;
+    zstdgpu_SeqAuxTableContext ctx;
     ctx.useVgpr = false;
+    ctx.llenVgpr.x = 0;
+    ctx.llenVgpr.y = 0;
+    ctx.mlenVgpr.x = 0;
+    ctx.mlenVgpr.y = 0;
 
-#if SEQ_BASE_TABLE_USE_READLANE_UNIFORM_INDEX_WAVE32 // multistream variants should not set this
+#if SEQ_AUX_TABLE_USE_READLANE_UNIFORM_INDEX_WAVE32
     ctx.useVgpr = (WaveGetLaneCount() == 32);
-    ctx.llenVgpr = uint32_t2(0, 0);
-    ctx.mlenVgpr = uint32_t2(0, 0);
     if (ctx.useVgpr)
     {
         const uint32_t laneIdx = WaveGetLaneIndex();
@@ -3079,30 +3078,29 @@ static zstdgpu_SeqBaseTableContext zstdgpu_InitSeqBaseTable()
         ctx.llenVgpr.x = SEQ_LLEN_EXTRA_BITS_AND_BASELINES[laneIdx];
         ctx.mlenVgpr.x = SEQ_MLEN_EXTRA_BITS_AND_BASELINES[laneIdx];
 
-        if (laneIdx < SEQ_LLEN_BASE_TABLE_END - 32)
+        if (laneIdx < SEQ_LLEN_AUX_TABLE_END - 32)
         {
             ctx.llenVgpr.y = SEQ_LLEN_EXTRA_BITS_AND_BASELINES[laneIdx + 32];
         }
 
-        if (laneIdx < SEQ_MLEN_BASE_TABLE_END - 32)
+        if (laneIdx < SEQ_MLEN_AUX_TABLE_END - 32)
         {
             ctx.mlenVgpr.y = SEQ_MLEN_EXTRA_BITS_AND_BASELINES[laneIdx + 32];
         }
     }
 #endif
+
     return ctx;
 }
 
-#if SEQ_BASE_TABLE_USE_READLANE_UNIFORM_INDEX_WAVE32
-static uint32_t zstdgpu_ConcatenatedWaveReadLaneAt(uint32_t2 v2, uint32_t flatIdx)
+static uint32_t zstdgpu_ReadSeqAuxTableVgprPair(uint32_t2 v2, uint32_t flatIdx)
 {
     // Since flatIdx should be uniform across the wave, we can do a select before WaveReadLaneAt.
-    // Even if that order was changed, DecompressSequences_MultiStream_LdsOutCache cannot work
-    // with this VGPR method, since all lanes may not be active in every loop iteration.
+    // Even if that order was changed, DecompressSequences_MultiStream_LdsOutCache cannot (currently) work
+    // with this VGPR method, since all lanes may not be active in the context this would be used.
     uint32_t v = flatIdx < 32 ? v2.x : v2.y;    // This "v_cndmask_b32" needs all lanes active.
     return WaveReadLaneAt(v, flatIdx & 31);     // Undefined in HLSL to read from an inactive lane.
 }
-#endif
 
 static void zstdgpu_ReadSeqBitsAndDecompress(ZSTDGPU_PARAM_INOUT(zstdgpu_Backward_BitBuffer_V0) bitBuffer,
                                              ZSTDGPU_PARAM_IN(uint32_t) symbolLLen,
@@ -3112,26 +3110,23 @@ static void zstdgpu_ReadSeqBitsAndDecompress(ZSTDGPU_PARAM_INOUT(zstdgpu_Backwar
                                              ZSTDGPU_PARAM_INOUT(uint32_t) outOffs,
                                              ZSTDGPU_PARAM_INOUT(uint32_t) outMLen,
                                              bool skipOffsRefill,
-                                             ZSTDGPU_PARAM_IN(zstdgpu_SeqBaseTableContext) ctx)
+                                             ZSTDGPU_PARAM_IN(zstdgpu_SeqAuxTableContext) ctx)
 {
-    ZSTDGPU_ASSERT(symbolLLen < SEQ_LLEN_BASE_TABLE_END);
-    ZSTDGPU_ASSERT(symbolMLen < SEQ_MLEN_BASE_TABLE_END);
+    ZSTDGPU_ASSERT(symbolLLen < SEQ_LLEN_AUX_TABLE_END);
+    ZSTDGPU_ASSERT(symbolMLen < SEQ_MLEN_AUX_TABLE_END);
     ZSTDGPU_ASSERT(symbolOffs <= (kzstdgpu_SeqOffset_Encoded_BitBase - 1));
     const uint32_t symbolOffs_Clamped = zstdgpu_MinU32(symbolOffs, kzstdgpu_SeqOffset_Encoded_BitBase - 1);
 
     uint32_t llenInfo;
     uint32_t mlenInfo;
 
-#if SEQ_BASE_TABLE_USE_READLANE_UNIFORM_INDEX_WAVE32
-    if (ctx.useVgpr)
+   if (ctx.useVgpr)
     {
-        llenInfo = zstdgpu_ConcatenatedWaveReadLaneAt(ctx.llenVgpr, symbolLLen);
-        mlenInfo = zstdgpu_ConcatenatedWaveReadLaneAt(ctx.mlenVgpr, symbolMLen);
+        llenInfo = zstdgpu_ReadSeqAuxTableVgprPair(ctx.llenVgpr, symbolLLen);
+        mlenInfo = zstdgpu_ReadSeqAuxTableVgprPair(ctx.mlenVgpr, symbolMLen);
     }
     else
-#endif
     {
-        ZSTDGPU_UNUSED(ctx);
         llenInfo = SEQ_LLEN_EXTRA_BITS_AND_BASELINES[symbolLLen];
         mlenInfo = SEQ_MLEN_EXTRA_BITS_AND_BASELINES[symbolMLen];
     }
@@ -3203,7 +3198,7 @@ static void zstdgpu_ShaderEntry_DecompressSequences_MultiStream(ZSTDGPU_PARAM_IN
     const uint32_t seqStreamCnt = srt.inCounters[0].Seq_Streams;
     const uint32_t cmpBlockCnt = srt.inCounters[0].Blocks_CMP;
 
-    const zstdgpu_SeqBaseTableContext seqBaseTableCtx = zstdgpu_InitSeqBaseTable();
+    const zstdgpu_SeqAuxTableContext seqAuxTableCtx = zstdgpu_InitSeqAuxTable();
 
     if (seqStreamIdx >= seqStreamCnt)
         return;
@@ -3267,7 +3262,7 @@ static void zstdgpu_ShaderEntry_DecompressSequences_MultiStream(ZSTDGPU_PARAM_IN
                 zstdgpu_FseElem_Symbol(fseElemLLen),
                 zstdgpu_FseElem_Symbol(fseElemOffs),
                 zstdgpu_FseElem_Symbol(fseElemMLen),
-                llen, offs, mlen, true, seqBaseTableCtx
+                llen, offs, mlen, true, seqAuxTableCtx
             );
             offs = zstdgpu_UpdatePreviousAndRecomputeIncoming(offset1, offset2, offset3, offs, llen);
 
@@ -3301,7 +3296,7 @@ static void zstdgpu_ShaderEntry_DecompressSequences_MultiStream(ZSTDGPU_PARAM_IN
                 zstdgpu_FseElem_Symbol(fseElemLLen),
                 zstdgpu_FseElem_Symbol(fseElemOffs),
                 zstdgpu_FseElem_Symbol(fseElemMLen),
-                llen, offs, mlen, true, seqBaseTableCtx
+                llen, offs, mlen, true, seqAuxTableCtx
             );
             offs = zstdgpu_UpdatePreviousAndRecomputeIncoming(offset1, offset2, offset3, offs, llen);
 
@@ -3354,7 +3349,7 @@ static void zstdgpu_ShaderEntry_DecompressSequences_SingleStream(ZSTDGPU_PARAM_I
     const uint32_t seqStreamCnt = srt.inCounters[0].Seq_Streams;
     const uint32_t cmpBlockCnt = srt.inCounters[0].Blocks_CMP;
 
-    const zstdgpu_SeqBaseTableContext seqBaseTableCtx = zstdgpu_InitSeqBaseTable();
+    const zstdgpu_SeqAuxTableContext seqAuxTableCtx = zstdgpu_InitSeqAuxTable();
 
     if (seqStreamIdx >= seqStreamCnt)
         return;
@@ -3402,10 +3397,10 @@ static void zstdgpu_ShaderEntry_DecompressSequences_SingleStream(ZSTDGPU_PARAM_I
 
     // The rest of the shader should be scalar. Deactivating unnecessary lanes may help.
     //
-    // However, SEQ_BASE_TABLE_USE_READLANE_UNIFORM_INDEX_WAVE32 requires all lanes active.
+    // However, SEQ_AUX_TABLE_USE_READLANE_UNIFORM_INDEX_WAVE32 requires all lanes active.
     // With it, there seems to be mostly scalar instructions, and for wave32 (not wave64) the potential benefit of
     // disabling lanes in this context is negligible.
-    ZSTDGPU_BRANCH if (!seqBaseTableCtx.useVgpr)
+    ZSTDGPU_BRANCH if (!seqAuxTableCtx.useVgpr)
     {
         if (threadId != 0)
         {
@@ -3457,7 +3452,7 @@ static void zstdgpu_ShaderEntry_DecompressSequences_SingleStream(ZSTDGPU_PARAM_I
             zstdgpu_FseElem_Symbol(packedFseElemLLen),
             zstdgpu_FseElem_Symbol(packedFseElemOffs),
             zstdgpu_FseElem_Symbol(packedFseElemMLen),
-            llen, offs, mlen, false, seqBaseTableCtx
+            llen, offs, mlen, false, seqAuxTableCtx
         );
         offs = zstdgpu_UpdatePreviousAndRecomputeIncoming(offset1, offset2, offset3, offs, llen);
 
@@ -3544,7 +3539,7 @@ static void zstdgpu_ShaderEntry_DecompressSequences_MultiStream_LdsOutCache(ZSTD
     const uint32_t seqStreamCnt = srt.inCounters[0].Seq_Streams;
     const uint32_t seqStreamBeg = groupId * streamsPerGroup;
 
-    const zstdgpu_SeqBaseTableContext seqBaseTableCtx = zstdgpu_InitSeqBaseTable();
+    const zstdgpu_SeqAuxTableContext seqAuxTableCtx = zstdgpu_InitSeqAuxTable();
 
     const uint32_t seqStreamCntInGroup = zstdgpu_MinU32(seqStreamCnt - seqStreamBeg, streamsPerGroup);
 
@@ -3638,7 +3633,7 @@ static void zstdgpu_ShaderEntry_DecompressSequences_MultiStream_LdsOutCache(ZSTD
                     zstdgpu_FseElem_Symbol(fseElemLLen),
                     zstdgpu_FseElem_Symbol(fseElemOffs),
                     zstdgpu_FseElem_Symbol(fseElemMLen),
-                    llen, offs, mlen, false, seqBaseTableCtx
+                    llen, offs, mlen, false, seqAuxTableCtx
                 );
                 offs = zstdgpu_UpdatePreviousAndRecomputeIncoming(offset1, offset2, offset3, offs, llen);
 
