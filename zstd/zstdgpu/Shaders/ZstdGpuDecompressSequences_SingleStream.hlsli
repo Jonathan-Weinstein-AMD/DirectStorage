@@ -32,6 +32,8 @@
 #define __XBOX_ENABLE_WAVE32 1
 #endif
 
+#define SCALAR_BITSTREAM 1
+
 #include "../zstdgpu_shaders.h"
 
 #include "../srt_headers/ZstdGpuSrt_DecompressSequences.h"

@@ -1067,6 +1067,11 @@ typedef struct zstdgpu_Backward_BitBuffer_V0
     uint32_t lastByteOffset;    // offset of last load (pre-decrement before next load)
     uint32_t baseByteOffset;
     bool     hadlastrefill;
+
+#if SCALAR_BITSTREAM
+    uint32_t stagingVgpr;
+    uint32_t nextId;
+#endif
 } zstdgpu_Backward_BitBuffer_V0;
 
 typedef struct zstdgpu_Backward_BitBuffer
@@ -1108,7 +1113,14 @@ static inline void zstdgpu_Backward_BitBuffer_V0_InitWithSegment(ZSTDGPU_PARAM_I
     // Firstly, we assume that all the bytes read from the last dword are valid and drop only highest bits
     uint32_t bitcnt = (datasz & 3u) << 3u; // Possible: 0, 8, 16, 24
     uint32_t bitmsk = ~0u >> (32u - bitcnt);
+#if SCALAR_BITSTREAM
+    // Signed clamp, we can't handle an input buffer > 2 GiB for other reasons already:
+    outBuffer.stagingVgpr = zstdgpu_ByteOffsetLoadU32(buffer, zstdgpu_MaxI32(baseByteOffset, lastByteOffset - WaveGetLaneIndex()*4));
+    outBuffer.nextId = 0; // loaded in" reverse"
+    uint32_t bitbuf = WaveReadLaneAt(outBuffer.stagingVgpr, outBuffer.nextId++);
+#else
     uint32_t bitbuf = zstdgpu_ByteOffsetLoadU32(buffer, lastByteOffset) & bitmsk;
+#endif
 
     // Secondly, we search for the highest set bit to see how many bits are valid
     bitcnt = zstdgpu_FindFirstBitHiU32_Nonzero(bitbuf);
@@ -1156,11 +1168,16 @@ static inline void zstdgpu_Backward_BitBuffer_V0_Refill(ZSTDGPU_PARAM_INOUT(zstd
 {
     ZSTDGPU_ASSERT(bitcnt <= 32);
 
+#if SCALAR_BITSTREAM
+    ZSTDGPU_BRANCH
+#endif
     if (inoutBuffer.bitcnt < bitcnt)
     {
         ZSTDGPU_ASSERT(inoutBuffer.hadlastrefill == false);
 
         ZSTDGPU_ASSERT(inoutBuffer.lastByteOffset >= 4);
+
+
         inoutBuffer.lastByteOffset -= 4;
         const uint32_t nextByteOffset = inoutBuffer.lastByteOffset;
         ZSTDGPU_ASSERT(nextByteOffset >= inoutBuffer.baseByteOffset);
@@ -1169,7 +1186,17 @@ static inline void zstdgpu_Backward_BitBuffer_V0_Refill(ZSTDGPU_PARAM_INOUT(zstd
         const uint32_t lobitcnt = nextByteOffset > inoutBuffer.baseByteOffset ? 0u : inoutBuffer.bitcntLast;
         const uint32_t hibitcnt = 32u - lobitcnt;
 
+#if SCALAR_BITSTREAM
+        if (inoutBuffer.nextId >= WaveGetLaneCount())
+        {
+            inoutBuffer.stagingVgpr = zstdgpu_ByteOffsetLoadU32(inoutBuffer.buffer, zstdgpu_MaxI32(inoutBuffer.baseByteOffset, nextByteOffset - WaveGetLaneIndex()*4));
+            inoutBuffer.nextId = 0;
+        }
+        const uint32_t loadValue = WaveReadLaneAt(inoutBuffer.stagingVgpr, inoutBuffer.nextId++);
+#else
         const uint32_t loadValue = zstdgpu_ByteOffsetLoadU32(inoutBuffer.buffer, nextByteOffset);
+#endif
+
         #ifdef ZSTDGPU_USE_REVERSED_BIT_BUFFER_BITBUF
             inoutBuffer.bitbuf |= (uint64_t)reversebits(loadValue) << inoutBuffer.bitcnt;
         #else
