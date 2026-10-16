@@ -3690,6 +3690,9 @@ static zstdgpu_Sequence zstdgpu_LoadSequence(ZSTDGPU_PARAM_INOUT(zstdgpu_Execute
 struct zstdgpu_ExecSeqsCtx
 {
     uint32_t vgprOverlappingMatchCopyReplicateLengths;
+    // Wave lookup table for "magic" for numerator and divisors <= 128 based on method
+    // "Faster Remainder by Direct Computation" by Lemire et al.
+    uint32_t vgprMagic16;
     uint32_t currentBlockDstEnd; //< NOTE(pamartis): this one is passed for safety clamp, could be ignored
 };
 
@@ -3771,8 +3774,11 @@ static void zstdgpu_MatchCopy(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dstData
         // done via the dstDat buffer load.
 
         const uint32_t replicatedLength = WaveReadLaneAt(ctx.vgprOverlappingMatchCopyReplicateLengths, seq.offs - 1);
+        const uint32_t magic16 = WaveReadLaneAt(ctx.vgprMagic16, seq.offs - 1);
+        const uint32_t lowbits16 = (magic16 * laneId) & 0xffffu;
+        const uint32_t laneIdModSeqOffs = ((lowbits16 * seq.offs) >> 16) & 0xff;
         // This load may have more active lanes than needed:
-        const uint32_t srcReplicated = dstData[dstOfs - seq.offs + (laneId % seq.offs)];
+        const uint32_t srcReplicated = dstData[dstOfs - seq.offs + laneIdModSeqOffs];
 
         const uint32_t copyLen = zstdgpu_MinU32(ctx.currentBlockDstEnd - dstOfs, seq.mlen); //< NOTE(pamartis): could skip min
 
@@ -3969,6 +3975,7 @@ static void zstdgpu_ShaderEntry_ExecuteSequences(ZSTDGPU_PARAM_INOUT(zstdgpu_Exe
     {
         const uint32_t seqOffs = laneId + 1;
         ctx.vgprOverlappingMatchCopyReplicateLengths = laneCount - (laneCount % seqOffs);
+        ctx.vgprMagic16 = ((0xffffu / seqOffs) + 1) & 0xffffu;
     }
 
     const uint32_t seqStreamCnt = srt.inCounters[0].Seq_Streams;
