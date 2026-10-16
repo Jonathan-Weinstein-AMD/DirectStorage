@@ -1119,8 +1119,9 @@ static inline void zstdgpu_Backward_BitBuffer_V0_InitWithSegment(ZSTDGPU_PARAM_I
     outBuffer.nextId = 0; // loaded in" reverse"
     uint32_t bitbuf = WaveReadLaneAt(outBuffer.stagingVgpr, outBuffer.nextId++);
 #else
-    uint32_t bitbuf = zstdgpu_ByteOffsetLoadU32(buffer, lastByteOffset) & bitmsk;
+    uint32_t bitbuf = zstdgpu_ByteOffsetLoadU32(buffer, lastByteOffset);
 #endif
+    bitbuf &= bitmsk;
 
     // Secondly, we search for the highest set bit to see how many bits are valid
     bitcnt = zstdgpu_FindFirstBitHiU32_Nonzero(bitbuf);

@@ -3400,6 +3400,7 @@ static void zstdgpu_ShaderEntry_DecompressSequences_SingleStream(ZSTDGPU_PARAM_I
     // However, SEQ_AUX_TABLE_USE_READLANE_UNIFORM_INDEX_WAVE32 requires all lanes active.
     // With it, there seems to be mostly scalar instructions, and for wave32 (not wave64) the potential benefit of
     // disabling lanes in this context is negligible.
+#if !SCALAR_BITSTREAM
     ZSTDGPU_BRANCH if (!seqAuxTableCtx.useVgpr)
     {
         if (threadId != 0)
@@ -3407,7 +3408,7 @@ static void zstdgpu_ShaderEntry_DecompressSequences_SingleStream(ZSTDGPU_PARAM_I
             return;
         }
     }
-
+#endif
         #ifdef ZSTDGPU_BACKWARD_BITBUF
         #   error `ZSTDGPU_BACKWARD_BITBUF` must not be defined.
         #endif
