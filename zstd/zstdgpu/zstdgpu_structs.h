@@ -498,6 +498,7 @@ static inline uint64_t zstdgpu_AlignUp64(uint64_t offset, uint64_t alignment)
 #endif
 
 #ifndef __hlsl_dx_compiler
+#define groupshared static
 typedef struct uint32_t4
 {
     uint32_t x, y, z, w;

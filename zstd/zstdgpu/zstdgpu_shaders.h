@@ -3677,13 +3677,68 @@ static zstdgpu_Sequence zstdgpu_LoadSequence(ZSTDGPU_PARAM_INOUT(zstdgpu_Execute
     return seq;
 }
 
+static const uint32_t ExecLdsMask = 1023;
+static const uint32_t ExecLdsCount = ExecLdsMask + 1;
+groupshared uint16_t ExecLds[ExecLdsCount];
+
 struct zstdgpu_ExecSeqsCtx
 {
     uint32_t vgprOverlappingMatchCopyReplicateLengths;
     uint32_t currentBlockDstEnd; //< NOTE(pamartis): this one is passed for safety clamp, could be ignored
+    uint32_t execLdsStartOutputOffset;
 };
 
-static void zstdgpu_MemSet(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dstData,
+static void zstdgpu_ExecSeqs_WriteOutput(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dstData,
+                                         uint32_t dstI,
+                                         uint32_t srcSym,
+                                         zstdgpu_ExecSeqsCtx) // unused now
+{
+    // Unconditionally mirror writes to both.
+    // Alternative idea: only write to LDS first, but "flush" LDS to the UAV when the LDS gets full.
+    ExecLds[dstI & ExecLdsMask] = (uint16_t) srcSym;
+    zstdgpu_TypedStoreU8(dstData, dstI, srcSym);
+}
+
+static uint32_t zstdgpu_ExecSeqs_ReadOutput(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dstData,
+                                            uint32_t s_matchCopyFirstAbsoluteDstOffset, // should be uniform (scalar)
+                                            uint32_t s_seq_offs, // should be uniform (scalar)
+                                            uint32_t v_laneId,
+                                            zstdgpu_ExecSeqsCtx ctx)
+{
+    const uint32_t ldsAvail = zstdgpu_MinU32(s_matchCopyFirstAbsoluteDstOffset - ctx.execLdsStartOutputOffset, ExecLdsMask); // ExecLdsCount? Shouldn't matter much.
+    uint32_t v_absoluteSrcOffset = (s_matchCopyFirstAbsoluteDstOffset - s_seq_offs) + v_laneId;
+    uint32_t sym;
+    ZSTDGPU_BRANCH if (ldsAvail >= s_seq_offs)
+    {
+        sym = ExecLds[v_absoluteSrcOffset & ExecLdsMask];
+    }
+    else
+    {
+        sym = dstData[v_absoluteSrcOffset];
+    }
+    return sym;
+}
+
+static uint32_t zstdgpu_ExecSeqs_GatherOutput(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dstData,
+                                              uint32_t s_matchCopyFirstAbsoluteDstOffset, // should be uniform (scalar)
+                                              uint32_t v_absoluteSrcOffset,
+                                              zstdgpu_ExecSeqsCtx ctx)
+{
+    const uint32_t ldsAvail = zstdgpu_MinU32(s_matchCopyFirstAbsoluteDstOffset - ctx.execLdsStartOutputOffset, ExecLdsMask); // ExecLdsCount? Shouldn't matter much.
+    uint32_t sym;
+    ZSTDGPU_BRANCH if (WaveActiveAllTrue(ldsAvail >= s_matchCopyFirstAbsoluteDstOffset - v_absoluteSrcOffset))
+    {
+        sym = ExecLds[v_absoluteSrcOffset & ExecLdsMask];
+    }
+    else
+    {
+        sym = dstData[v_absoluteSrcOffset];
+    }
+    return sym;
+}
+
+// For literal copies from RLE literals.
+static void zstdgpu_LitSet(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dstData,
                            ZSTDGPU_PARAM_INOUT(uint32_t) dstOfs,
                            uint32_t srcSym,
                            uint32_t srcCnt,
@@ -3696,11 +3751,12 @@ static void zstdgpu_MemSet(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dstData,
 
     ZSTDGPU_LOOP for (; dstI < dstEnd; dstI += WaveGetLaneCount())
     {
-        zstdgpu_TypedStoreU8(dstData, dstI, srcSym);
+        zstdgpu_ExecSeqs_WriteOutput(dstData, dstI, srcSym, ctx);
     }
 }
 
-static void zstdgpu_MemCpy_DstSrc(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dstData,
+// For literal copies.
+static void zstdgpu_LitCpy_DstSrc(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dstData,
                                   ZSTDGPU_PARAM_INOUT(uint32_t) dstOfs,
                                   ZSTDGPU_RO_TYPED_BUFFER(uint32_t, uint8_t) srcData,
                                   ZSTDGPU_PARAM_INOUT(uint32_t) srcOfs,
@@ -3716,7 +3772,7 @@ static void zstdgpu_MemCpy_DstSrc(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dst
 
     ZSTDGPU_LOOP for (; dstI < dstEnd; dstI += WaveGetLaneCount(), srcI += WaveGetLaneCount())
     {
-        zstdgpu_TypedStoreU8(dstData, dstI, srcData[srcI]);
+        zstdgpu_ExecSeqs_WriteOutput(dstData, dstI, srcData[srcI], ctx);
     }
 }
 
@@ -3731,14 +3787,15 @@ static void zstdgpu_MatchCopy(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dstData
     // When either path could handle the match copy, prefer this one since there is no modulo.
     ZSTDGPU_BRANCH if (seq.offs >= zstdgpu_MinU32(laneCount, seq.mlen))
     {
-        uint32_t dstI = dstOfs + laneId;
-        dstOfs += seq.mlen;
-        const uint32_t dstEnd = zstdgpu_MinU32(ctx.currentBlockDstEnd, dstOfs); //< NOTE(pamartis): could skip min
+        const uint32_t dstEnd = zstdgpu_MinU32(ctx.currentBlockDstEnd, dstOfs + seq.mlen); //< NOTE(pamartis): could skip min
 
-        ZSTDGPU_LOOP for (; dstI < dstEnd; dstI += laneCount)
+        ZSTDGPU_LOOP for (; dstOfs + laneId < dstEnd; dstOfs += laneCount) // keep dstOffs scalar in loop
         {
-            zstdgpu_TypedStoreU8(dstData, dstI, dstData[dstI - seq.offs]);
+            const uint32_t sym = zstdgpu_ExecSeqs_ReadOutput(dstData, dstOfs, seq.offs, laneId, ctx);
+            zstdgpu_ExecSeqs_WriteOutput(dstData, dstOfs + laneId, sym, ctx);
         }
+
+        dstOfs = dstEnd;
     }
     else // 'seq.offs < seq.mlen && seq.offs < laneCount':
     {
@@ -3762,7 +3819,7 @@ static void zstdgpu_MatchCopy(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dstData
 
         const uint32_t replicatedLength = WaveReadLaneAt(ctx.vgprOverlappingMatchCopyReplicateLengths, seq.offs - 1);
         // This load may have more active lanes than needed:
-        const uint32_t srcReplicated = dstData[dstOfs - seq.offs + (laneId % seq.offs)];
+        const uint32_t srcReplicated = zstdgpu_ExecSeqs_ReadOutput(dstData, dstOfs, seq.offs, laneId % seq.offs, ctx);
 
         const uint32_t copyLen = zstdgpu_MinU32(ctx.currentBlockDstEnd - dstOfs, seq.mlen); //< NOTE(pamartis): could skip min
 
@@ -3772,7 +3829,7 @@ static void zstdgpu_MatchCopy(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, uint8_t) dstData
         {
             for (uint32_t copyId = laneId; copyId < copyLen; copyId += replicatedLength)
             {
-                zstdgpu_TypedStoreU8(dstData, dstOfs + copyId, srcReplicated);
+                zstdgpu_ExecSeqs_WriteOutput(dstData, dstOfs + copyId, srcReplicated, ctx);
             }
         }
 
@@ -3799,9 +3856,9 @@ static void zstdgpu_ExecuteSequence_FusedCopy(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, 
             // Load both literal and match values unconditionally, then select based on laneId to keep control flow wave-uniform.
             // Hot path is bound by dependent-store latency rather than loads.
             const uint32_t litVal   = litBuf[litOfs + laneId];
-            const uint32_t matchVal = dstData[dstOfs + laneId - seq.offs];
+            const uint32_t matchVal = zstdgpu_ExecSeqs_ReadOutput(dstData, dstOfs, seq.offs, laneId, ctx);
             const uint32_t value    = (laneId < seq.llen) ? litVal : matchVal;
-            zstdgpu_TypedStoreU8(dstData, dstOfs + laneId, value);
+            zstdgpu_ExecSeqs_WriteOutput(dstData, dstOfs + laneId, value, ctx);
         }
         dstOfs += total;
         litOfs += seq.llen;
@@ -3809,7 +3866,7 @@ static void zstdgpu_ExecuteSequence_FusedCopy(ZSTDGPU_RW_TYPED_BUFFER(uint32_t, 
     else
     {
         // Fall back to separate literal and match copies when the fused copy conditions are not met.
-        zstdgpu_MemCpy_DstSrc(dstData, dstOfs, litBuf, litOfs, seq.llen, ctx);
+        zstdgpu_LitCpy_DstSrc(dstData, dstOfs, litBuf, litOfs, seq.llen, ctx);
         zstdgpu_MatchCopy(dstData, dstOfs, seq, ctx);
     }
 }
@@ -3844,9 +3901,9 @@ static void zstdgpu_ExecuteSequencePair_FusedCopy(ZSTDGPU_RW_TYPED_BUFFER(uint32
             const uint32_t litIdx   = inSeq0 ? (litOfs + laneId) : (litOfs + seq0.llen + local);
             const uint32_t off      = inSeq0 ? seq0.offs : seq1.offs;
             const uint32_t litVal   = litBuf[litIdx];
-            const uint32_t matchVal = dstData[dstOfs + laneId - off];
+            const uint32_t matchVal = zstdgpu_ExecSeqs_GatherOutput(dstData,  dstOfs, (dstOfs + laneId - off), ctx);
             const uint32_t value    = (local < llenL) ? litVal : matchVal;
-            zstdgpu_TypedStoreU8(dstData, dstOfs + laneId, value);
+            zstdgpu_ExecSeqs_WriteOutput(dstData, dstOfs + laneId, value, ctx);
         }
         dstOfs += combined;
         litOfs += seq0.llen + seq1.llen;
@@ -3865,9 +3922,9 @@ static void zstdgpu_ExecuteSequencePair_FusedCopy(ZSTDGPU_RW_TYPED_BUFFER(uint32
             const uint32_t litIdx = inSeq0 ? (litOfs + b) : (litOfs + seq0.llen + local);
             const uint32_t off    = inSeq0 ? seq0.offs : seq1.offs;
             const uint32_t litVal   = litBuf[litIdx];
-            const uint32_t matchVal = dstData[dstOfs + b - off];
+            const uint32_t matchVal = dstData[dstOfs + b - off]; // this path doesn't seem taken much, don't try to use LDS for now
             const uint32_t value    = (local < llenL) ? litVal : matchVal;
-            zstdgpu_TypedStoreU8(dstData, dstOfs + b, value);
+            zstdgpu_ExecSeqs_WriteOutput(dstData, dstOfs + b, value, ctx);
         }
         dstOfs += combined;
         litOfs += seq0.llen + seq1.llen;
@@ -3948,7 +4005,7 @@ static void zstdgpu_ExecuteSequences_Lit(ZSTDGPU_PARAM_INOUT(zstdgpu_ExecuteSequ
 
     // NOTE(pamartis): copy remaining literals. If there's no sequences, we copy the entire literal block.
     ZSTDGPU_ASSERT(litEnd - litOfs == ctx.currentBlockDstEnd - dstOfs);
-    zstdgpu_MemCpy_DstSrc(srt.inoutUnCompressedFramesData, dstOfs, litBuf, litOfs, litEnd - litOfs, ctx);
+    zstdgpu_LitCpy_DstSrc(srt.inoutUnCompressedFramesData, dstOfs, litBuf, litOfs, litEnd - litOfs, ctx);
 }
 
 static void zstdgpu_ShaderEntry_ExecuteSequences(ZSTDGPU_PARAM_INOUT(zstdgpu_ExecuteSequences_SRT) srt, uint32_t groupId)
@@ -3992,6 +4049,10 @@ static void zstdgpu_ShaderEntry_ExecuteSequences(ZSTDGPU_PARAM_INOUT(zstdgpu_Exe
         const uint32_t blockByteBeg = srt.inBlockDestOffs[blockIdx];
         const uint32_t blockByteEnd = blockByteBeg + blockSize;
         ctx.currentBlockDstEnd = blockByteEnd;
+
+        // We don't let blocks try to read LDS written from sequence executions in previous blocks.
+        // One reason is that Raw/RLE blocks are written "early".
+        ctx.execLdsStartOutputOffset = blockByteBeg;
 
 #if 0
         for (uint32_t blockByteIdx = blockByteBeg + i; blockByteIdx < blockByteEnd; blockByteIdx += maxCopySize)
@@ -4049,7 +4110,7 @@ static void zstdgpu_ShaderEntry_ExecuteSequences(ZSTDGPU_PARAM_INOUT(zstdgpu_Exe
                 // NOTE(pamartis): these are still uniform variables HLSL has no way of enforcing....
                 zstdgpu_Sequence seq = zstdgpu_LoadSequence(srt, seqIdx);
 
-                zstdgpu_MemSet(srt.inoutUnCompressedFramesData, blockByteCur, symbol, seq.llen, ctx);
+                zstdgpu_LitSet(srt.inoutUnCompressedFramesData, blockByteCur, symbol, seq.llen, ctx);
                 litCur += seq.llen;
                 zstdgpu_MatchCopy(srt.inoutUnCompressedFramesData, blockByteCur, seq, ctx);
             }
@@ -4058,7 +4119,7 @@ static void zstdgpu_ShaderEntry_ExecuteSequences(ZSTDGPU_PARAM_INOUT(zstdgpu_Exe
             // it means meaning there's no sequences, we copy the entire literal block.
             ZSTDGPU_ASSERT(litSize - litCur == ctx.currentBlockDstEnd - blockByteCur);
 
-            zstdgpu_MemSet(srt.inoutUnCompressedFramesData, blockByteCur, symbol, litSize - litCur, ctx);
+            zstdgpu_LitSet(srt.inoutUnCompressedFramesData, blockByteCur, symbol, litSize - litCur, ctx);
         }
 #endif
 

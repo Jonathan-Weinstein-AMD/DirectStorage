@@ -270,9 +270,8 @@
   <Target Name="CollectShaders">
     <ItemGroup>
       <Shader Include="$(MSBuildThisFileDirectory)Shaders\*.hlsl">
-        <ShaderModel>cs_6_0</ShaderModel>
-        <Opts>
-        </Opts>
+        <ShaderModel>cs_6_2</ShaderModel>
+        <Opts>-enable-16bit-types</Opts>
       </Shader>
       <!-- Headers shared by all shaders: any change to these must recompile every shader -->
       <ShaderDeps Include="$(MSBuildThisFileDirectory)Shaders\*.hlsli" />
